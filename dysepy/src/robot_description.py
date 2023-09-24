@@ -20,8 +20,8 @@ class Robot_Description:
 		self.name = None
 		self.path = None
 		self.with_xacro = False
-		self.buff_nodes = None
-		self.buff_respawn = None
+		self.dyse_nodes = None
+		self.dyse_respawn = None
 		self.ros_nodes = None
 		self.ros_respawn = None
 		self.data = None
@@ -62,17 +62,17 @@ class Robot_Description:
 					self.ros_respawn.append(required)
 					self.ros_nodes.append(cmd)
 
-	def buff_node_commands(self, nodes):
+	def dyse_node_commands(self, nodes):
 		"""
-			parse the buff_nodes section of a nodes.yaml
+			parse the dyse_nodes section of a nodes.yaml
 			Construct commands to run each node, does not
 			use rosrun
 
 			@params:
 				nodes: dictionary of nodes to spawn
 		"""
-		self.buff_nodes = []
-		self.buff_respawn = []
+		self.dyse_nodes = []
+		self.dyse_respawn = []
 
 		# load and launch each node in the config
 		for name in nodes:
@@ -96,8 +96,8 @@ class Robot_Description:
 					else:
 						cmd = [file_path]
 		
-					self.buff_respawn.append(required)
-					self.buff_nodes.append(cmd + args)
+					self.dyse_respawn.append(required)
+					self.dyse_nodes.append(cmd + args)
 
 	def load_description(self, name):
 		"""
@@ -138,9 +138,9 @@ class Robot_Description:
 				self.ros_node_commands(contents['ros_nodes'])
 				self.data['ros_nodes'] = contents['ros_nodes']
 
-			if 'buff_nodes' in contents:	
-				self.buff_node_commands(contents['buff_nodes'])
-				self.data['buff_nodes'] = contents['buff_nodes']
+			if 'dyse_nodes' in contents:	
+				self.dyse_node_commands(contents['dyse_nodes'])
+				self.data['dyse_nodes'] = contents['dyse_nodes']
 
 		self.data['robot_name'] = name
 		os.environ['ROBOT_NAME'] = name					# for BYU
@@ -160,9 +160,9 @@ class Robot_Description:
 		respawn = []
 		commands = []
 
-		if not self.buff_respawn is None:
-			respawn = self.buff_respawn
-			commands = self.buff_nodes
+		if not self.dyse_respawn is None:
+			respawn = self.dyse_respawn
+			commands = self.dyse_nodes
 
 		if not self.ros_respawn is None:
 			respawn += self.ros_respawn

@@ -1,7 +1,7 @@
 ##############################
 #
 #
-#       The Buff-Stuff  
+#       The Dyse-Stuff  
 #
 #
 ##############################
@@ -10,8 +10,8 @@ robot_type: example
 
 # Specify our nodes from dysepy/lib
 # spinup perception and comms here
-buff_nodes:
-  buff_rust:
+dyse_nodes:
+  dyse_rust:
     files: [comms_node]
   pin_test1:
     files: [../tests/usb_delay_test.py]

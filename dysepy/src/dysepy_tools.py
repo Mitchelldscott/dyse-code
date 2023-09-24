@@ -7,26 +7,26 @@ import shutil
 # logger statuses (please add more, or make the logger a whole project)
 LOGGER_MESSAGE_TYPES = {0: "INFO", 1: "WARNING", 2: "ERROR"}
 
-# A look up table that connects shorthand terms to absolute paths in buff-code
+# A look up table that connects shorthand terms to absolute paths in dyse-code
 # this file is on the python path and can be used from any other python script
 # TODO: find a way to share this with rust (maybe it needs to be saved as a file)
-BuffPy_Project_Root = os.getenv('PROJECT_ROOT')
-Buffpy_Profile_Path = os.path.join(os.getenv("PROJECT_ROOT"), "dysepy", "data", "build")
+DysePy_Project_Root = os.getenv('PROJECT_ROOT')
+DysePy_Profile_Path = os.path.join(os.getenv("PROJECT_ROOT"), "dysepy", "data", "build")
 
-DysePy_LOC_LUT = {  'root': BuffPy_Project_Root,
-					'src': os.path.join(BuffPy_Project_Root, 'src'),
-					'data': os.path.join(BuffPy_Project_Root, 'data'),
-					'dysepy': os.path.join(BuffPy_Project_Root, 'dysepy'),
-					'lib': os.path.join(BuffPy_Project_Root, 'dysepy', 'lib'), 
-					'bin': os.path.join(BuffPy_Project_Root, 'dysepy', 'bin'),
-					'docker': os.path.join(BuffPy_Project_Root, 'containers'),
-					'docs': os.path.join(BuffPy_Project_Root, 'documentation'),
-					'models': os.path.join(BuffPy_Project_Root, 'dysepy', 'data', 'models'),
-					'robots': os.path.join(BuffPy_Project_Root, 'dysepy', 'data', 'robots'),
-					'profiles': os.path.join(BuffPy_Project_Root, 'dysepy', 'data', 'build'),
-					'self': os.path.join(BuffPy_Project_Root, 'dysepy', 'data', 'robots', 'self.txt')}
+DysePy_LOC_LUT = {  'root': DysePy_Project_Root,
+					'src': os.path.join(DysePy_Project_Root, 'src'),
+					'data': os.path.join(DysePy_Project_Root, 'data'),
+					'dysepy': os.path.join(DysePy_Project_Root, 'dysepy'),
+					'lib': os.path.join(DysePy_Project_Root, 'dysepy', 'lib'), 
+					'bin': os.path.join(DysePy_Project_Root, 'dysepy', 'bin'),
+					'docker': os.path.join(DysePy_Project_Root, 'containers'),
+					'docs': os.path.join(DysePy_Project_Root, 'documentation'),
+					'models': os.path.join(DysePy_Project_Root, 'dysepy', 'data', 'models'),
+					'robots': os.path.join(DysePy_Project_Root, 'dysepy', 'data', 'robots'),
+					'profiles': os.path.join(DysePy_Project_Root, 'dysepy', 'data', 'build'),
+					'self': os.path.join(DysePy_Project_Root, 'dysepy', 'data', 'robots', 'self.txt')}
 
-def buff_log(msg, status):
+def dyse_log(msg, status):
 	"""
 		Fancy print function with the dysepy signiture
 		and a status, see above for status information
@@ -34,7 +34,7 @@ def buff_log(msg, status):
 	if status is None:
 		status = 2
 
-	print(f"[Buffpy] {LOGGER_MESSAGE_TYPES[status]}: {msg}")
+	print(f"[DysePy] {LOGGER_MESSAGE_TYPES[status]}: {msg}")
 
 def reset_directory(directory):
 	"""
@@ -56,7 +56,7 @@ def assert_directory(directory):
 		if it doesn't create the directory
 	"""
 	if not os.path.exists(directory):
-		buff_log(f"{directory} does not exist, creating", 1)
+		dyse_log(f"{directory} does not exist, creating", 1)
 		os.mkdir(directory)
 
 def copy_file_from_profile(src, dst):
@@ -89,7 +89,7 @@ def copy_packages(src_path, item_name, dst_path):
 		Copy a file or directory from src_path/target_src to dst_path
 		The copied package will have the same name (target_src) and will
 		exist under dst_path
-		Uses buff_log as a debug tool, status will reflect if the
+		Uses dyse_log as a debug tool, status will reflect if the
 		file exists before copying and is in the right location after
 
 		Heavy logging for now, can turn it down when we feel stable.
@@ -107,7 +107,7 @@ def copy_packages(src_path, item_name, dst_path):
 		assert_directory(loc)
 		src = os.path.join(src_path, item)
 		dst = os.path.join(loc, item.split('/')[-1])
-		buff_log(f"Installing {src} -> {dst}", not os.path.exists(src))
+		dyse_log(f"Installing {src} -> {dst}", not os.path.exists(src))
 
 		if os.path.isdir(item):
 			copy_dir_from_profile(src, dst)
@@ -115,13 +115,13 @@ def copy_packages(src_path, item_name, dst_path):
 		elif os.path.isfile(item):
 			copy_file_from_profile(src, dst)
 
-		buff_log(f"Installed {src} -> {dst}", not os.path.exists(dst))
+		dyse_log(f"Installed {src} -> {dst}", not os.path.exists(dst))
 
 def parse_args(args):
 	"""
 		Used to replace env variables in a string of arguments.
 		This allows env variables in the args section of a node 
-		 > see nodes.yaml:buff-nodes or nodes.yaml:ros-nodes
+		 > see nodes.yaml:dyse-nodes or nodes.yaml:ros-nodes
 
 		@params
 			args: list of strings
@@ -176,7 +176,7 @@ def load_install_params():
 
 	# Setup Parameters for install
 	source = DysePy_LOC_LUT['dysepy']
-	target = os.path.join('/home', 'cu-robotics', 'buff-code')
+	target = os.path.join('/home', 'cu-robotics', 'dyse-code')
 	ID = DysePy_LOC_LUT['self']
 
 	if len(os.listdir(os.path.join(source, 'lib'))) == 0:

@@ -14,7 +14,7 @@ class Build_Profile:
 		project. This implementation is meant to scale to any number, type and size
 		of project.
 
-		A project is a directory under buff-code/src that makes use of a
+		A project is a directory under dyse-code/src that makes use of a
 		build system or a program that will generate files/binaries for
 		the robot's software.
 
@@ -60,7 +60,7 @@ class Build_Profile:
 		profile_path = os.path.join(DysePy_LOC_LUT['profiles'], f'{profile}.yaml')
 
 		if not os.path.exists(profile_path):
-			buff_log(f"Profile {profile_path} does not exist", 2)
+			dyse_log(f"Profile {profile_path} does not exist", 2)
 			return
 
 		with open(profile_path, 'r') as profile:
@@ -96,16 +96,16 @@ class Build_Profile:
 	def assert_setup(self):
 		"""
 			Some profiles require a setup (cloning from git or just creating some files)
-			Runs the setup_cmd from buff-code/src or whatever the project dir is.
+			Runs the setup_cmd from dyse-code/src or whatever the project dir is.
 		"""
 		if self.name == "":
-			buff_log(f"Virtual Project detected", 0)
+			dyse_log(f"Virtual Project detected", 0)
 			return 2
 
 		if not os.path.exists(self.project_path()):
-			buff_log(f"Can't find project: attempting setup ...", 1)
+			dyse_log(f"Can't find project: attempting setup ...", 1)
 			if self.run_setup():
-				buff_log(f"No existing setup for {self.name}", 2)
+				dyse_log(f"No existing setup for {self.name}", 2)
 				return 1
 
 		return 0
@@ -115,7 +115,7 @@ class Build_Profile:
 			Check if number of targets and install locations match
 		"""
 		if len(self.target_dst) != len(self.target_src):
-			buff_log(f"Target and install mismatch {len(self.target_src)} != {len(self.target_dst)}", 2)
+			dyse_log(f"Target and install mismatch {len(self.target_src)} != {len(self.target_dst)}", 2)
 			return 1
 
 		return 0
@@ -130,7 +130,7 @@ class Build_Profile:
 		for target in self.target_src:
 			status |= not os.path.exists(os.path.join(self.project_path(), target))
 
-		buff_log(f"{self.name} Built", 2 * status) # error if True info if False
+		dyse_log(f"{self.name} Built", 2 * status) # error if True info if False
 
 	def validate_install(self):
 		"""
@@ -143,7 +143,7 @@ class Build_Profile:
 			sb.run(['chmod', '+x', os.path.join(dst, src.split('/')[-1])])
 			status |= not os.path.exists(os.path.join(dst, src.split('/')[-1]))
 
-		buff_log(f"{self.name} Installed", 2 * status) # error if True info if False
+		dyse_log(f"{self.name} Installed", 2 * status) # error if True info if False
 
 	def validate_clean(self):
 		"""
@@ -154,7 +154,7 @@ class Build_Profile:
 		for target in self.target_src:
 			status |= os.path.exists(os.path.join(self.project_path(), target))
 
-		buff_log(f"{self.name} Cleaned", 2 * status) # error if True info if False
+		dyse_log(f"{self.name} Cleaned", 2 * status) # error if True info if False
 
 	def run_job(self, base_cmd, path):
 		"""
@@ -164,7 +164,7 @@ class Build_Profile:
 			@params
 		"""
 		if self.name is None:
-			buff_log(f"Name {self.name} is invalid", 2)
+			dyse_log(f"Name {self.name} is invalid", 2)
 			return None
 
 		if not base_cmd is None:
@@ -173,27 +173,27 @@ class Build_Profile:
 
 	def run_setup(self):
 		"""
-			Run the setup command from project dir (buff-code/src)
+			Run the setup command from project dir (dyse-code/src)
 			@returns
 				status of setup
 		"""
 		self.run_job(self.setup_cmd, DysePy_LOC_LUT['src'])
-		buff_log(f"Finished {self.name} setup", not os.path.exists(self.project_path()))
+		dyse_log(f"Finished {self.name} setup", not os.path.exists(self.project_path()))
 		return not os.path.exists(self.project_path())
 
 	def run_build(self):
 		"""
-			Run the build command from project root (buff-code/src/PROJECT_NAME)
+			Run the build command from project root (dyse-code/src/PROJECT_NAME)
 		"""
 		if self.assert_setup() == 0:
 			if self.validate_targets():
 				return
 
-			buff_log(f"Building {self.name}", 0)
+			dyse_log(f"Building {self.name}", 0)
 			self.run_job(self.build_cmd, self.project_path())
 			self.validate_build()
 
-			buff_log(f"Installing {self.name}", 0)
+			dyse_log(f"Installing {self.name}", 0)
 			copy_packages(self.project_path(), self.target_src, [DysePy_LOC_LUT[dst] for dst in self.target_dst])
 			self.validate_install()
 
@@ -202,14 +202,14 @@ class Build_Profile:
 
 	def run_clean(self):
 		"""
-			run the clean command from project root (buff-code/src/PROJECT_NAME)
+			run the clean command from project root (dyse-code/src/PROJECT_NAME)
 		"""
 		if self.name != "":
 			if not os.path.exists(self.project_path()):
-				buff_log(f"Can't find project: nothing to clean", 1)
+				dyse_log(f"Can't find project: nothing to clean", 1)
 				return
 
-			buff_log(f"Cleaning {self.name}", 0)
+			dyse_log(f"Cleaning {self.name}", 0)
 			self.run_job(self.clean_cmd, self.project_path())
 			self.validate_clean()
 

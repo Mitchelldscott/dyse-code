@@ -6,7 +6,7 @@ import yaml
 import glob
 # import rospy
 import shutil
-import roslaunch
+# import roslaunch
 import subprocess as sb
 
 from dysepy_tools import *
@@ -42,10 +42,10 @@ class Robot_Spawner:
 	# 		This function uploads a URDF (xacro) to the server along with a few other
 	# 		  variables that programs might want to know
 	# 	"""
-	# 	namespace = '/buffbot'
+	# 	namespace = '/dysebot'
 	# 	params = {'robot-name': name}
 	# 	if (with_xacro):
-	# 		command_string = f"rosrun xacro xacro {os.path.join(DysePy_LOC_LUT['robots'], name, 'buffbot.xacro')}"
+	# 		command_string = f"rosrun xacro xacro {os.path.join(DysePy_LOC_LUT['robots'], name, 'dysebot.xacro')}"
 	# 		robot_description = sb.check_output(command_string, shell=True, stderr=sb.STDOUT)
 	# 		params['description'] = robot_description.decode()
 
@@ -127,9 +127,10 @@ class Robot_Spawner:
 
 		if not self.pool is None:
 			for (i, cmd) in enumerate(self.commands):
-				proc = self.pool[''.join(cmd)]
-				if not proc is None:
-					proc.terminate()
+				if ''.join(cmd) in self.pool:
+					proc = self.pool[''.join(cmd)]
+					if not proc is None:
+						proc.terminate()
 
 		# if not self.roscore is None:
 		# 	self.roscore.terminate()

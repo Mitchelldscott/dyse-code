@@ -1,5 +1,5 @@
 #! /bin/bash
 
-sudo cp /home/dyse-robotics/dyse-code/dysepy/scripts/buffbot.service /etc/systemd/system
+sudo cp /home/dyse-robotics/dyse-code/dysepy/scripts/dysebot.service /etc/systemd/system
 
-sudo systemctl enable buffbot.service
+sudo systemctl enable dysebot.service

@@ -1,0 +1,23 @@
+[package]
+name = "dyse_rust"
+version = "0.3.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+csv = "1.2.2"
+rand = "0.8.5"
+hidapi = "2.2.0"
+yaml-rust = "0.4.5"
+glob = "0.3.1"
+gnuplot = "0.0.39"
+more-asserts = "0.3.1"
+crossbeam-channel = "0.5.8"
+
+
+
+[[bin]]
+name = "comms_node"
+path = "src/comms/comms_node.rs"
+

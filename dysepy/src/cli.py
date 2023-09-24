@@ -12,7 +12,7 @@ from robot_installer import *
 from build_profile import Build_Profile
 from uml_generator import UML_Generator
 
-# This is BuffPy
+# This is DysePy
 
 def clean_profile(profile):
 	bp = Build_Profile();
@@ -56,7 +56,7 @@ def main():
 	if ap.clean:
 		if ap.clean in DysePy_LOC_LUT: # clean the workspace
 			reset_directory(DysePy_LOC_LUT[ap.clean])
-			buff_log(f"Reset directory {DysePy_LOC_LUT[ap.clean]}", 0)
+			dyse_log(f"Reset directory {DysePy_LOC_LUT[ap.clean]}", 0)
 		else:	# clean a profile
 			clean_profile(ap.clean)
 

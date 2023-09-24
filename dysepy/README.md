@@ -1,5 +1,5 @@
-# Buffpy
-Buffpy is two things:
+# DysePy
+DysePy is two things:
 
 `dysepy/` is a deployable package that contains all the executables and configurations our robots will need.
 `dysepy/src` contains tools for setting up, building and installing projects into `dysepy/`.
@@ -7,7 +7,7 @@ Buffpy is two things:
 
 ## Development Tools
 
-Buff-Code uses build profiles to generate executables (nodes). A build build profile is a yaml file (filename without .yaml) under `dysepy/data/build`
+Dyse-Code uses build profiles to generate executables (nodes). A build build profile is a yaml file (filename without .yaml) under `dysepy/data/build`
 
 Each build profile contains a directory containing source code and bash commands to initialize, build and install the project.
 
@@ -23,7 +23,7 @@ Clean Projects with
 
         dysepy -c <build_profile>
 
-Buffpy can also deploy itself to a robot over WiFi
+DysePy can also deploy itself to a robot over WiFi
 
         dysepy --deploy
 
