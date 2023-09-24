@@ -1,0 +1,5 @@
+project: 'buff_rust'
+build: 'cargo build && cargo fmt'
+clean: 'cargo clean'
+targets: ['target/debug/comms_node', 'target/debug/viz_node']
+install: ['lib', 'lib']

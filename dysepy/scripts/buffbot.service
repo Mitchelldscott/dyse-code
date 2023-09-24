@@ -1,0 +1,14 @@
+[Unit]
+Description=CU Robotics Startup Service
+ConditionPathExists=/home/dyse-robotics/dyse-code/dysepy
+
+[Service]
+Type=forking
+Restart=always
+User=cu-robotics
+TimeoutStartSec=900
+WorkingDirectory=/home/dyse-robotics/dyse-code
+ExecStart=/bin/bash -c 'source /home/dyse-robotics/dyse-code/dysepy/dyse.bash && run self.yaml'
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+project: 'template'                                       # path to project relative to ${PROJECT_ROOT}/src
+setup: 'mkdir template && touch template/status.txt'      # command to setup or fake project
+build: 'echo template project built successfully! > status.txt'    # bash command to build the project, keep it simple
+clean: 'rm -rf status.txt'                                # bash command to clean the project
+
+targets: ['status.txt']                                   # file we want to install
+install: ['docs']                                         # where to install it (docs/lib/bin)

@@ -1,0 +1,42 @@
+##############################
+#
+#
+#         Pin Outputs
+#
+#
+##############################
+
+signal:
+ - driver: VAL
+ - rate: 200
+ - inputs: []
+ - parameters: [200.0]
+
+
+led1:
+ - driver: PWM
+ - rate: 200
+ - inputs: [signal]
+ - parameters: [11.0]
+ - publish: 200
+
+led2:
+ - driver: PWM
+ - rate: 100
+ - inputs: [signal]
+ - parameters: [8.0]
+ - publish: 100
+
+led3:
+ - driver: PWM
+ - rate: 60
+ - inputs: [signal]
+ - parameters: [10.0]
+ - publish: 100
+
+led4:
+ - driver: PWM
+ - rate: 30
+ - inputs: [signal]
+ - parameters: [7.0]
+ - publish: 100

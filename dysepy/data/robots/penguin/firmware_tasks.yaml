@@ -1,0 +1,40 @@
+lsm9ds1:
+  - driver: DS1
+  - rate: 1000
+  - publish: 100
+
+complimentary_filter:
+  - driver: CMF
+  - rate: 1000
+  - publish: 100
+  - parameters: [1.0]
+
+signal:
+ - driver: SIN
+ - rate: 200
+ - inputs: []
+ - parameters: [10.0, 0.4, 0.6] # [frequency, amplitude, shift]
+
+pwm1:
+ - driver: PWM
+ - rate: 200
+ - inputs: [signal]
+ - parameters: [8.0]
+
+pwm2:
+ - driver: PWM
+ - rate: 100
+ - inputs: [signal]
+ - parameters: [6.0]
+
+pwm3:
+ - driver: PWM
+ - rate: 60
+ - inputs: [signal]
+ - parameters: [7.0]
+
+pwm4:
+ - driver: PWM
+ - rate: 30
+ - inputs: [signal]
+ - parameters: [5.0]

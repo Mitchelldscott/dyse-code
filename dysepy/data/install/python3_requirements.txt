@@ -1,0 +1,10 @@
+numpy
+pyyaml
+pandas
+pillow
+cython
+seaborn
+protobuf
+requests
+setuptools
+opencv-python
