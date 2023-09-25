@@ -29,19 +29,19 @@ pub mod byu_tests {
 
     #[test]
     pub fn load_yaml() {
-        
         let yaml_data = "integer: 1\nfloat: 1.0";
 
         let byu = BuffYamlUtil::new(yaml_data);
-        
-        byu.parse_int("integer", byu.data()).expect("Did not find integer");
-        byu.parse_float("float", byu.data()).expect("Did not find float");
+
+        byu.parse_int("integer", byu.data())
+            .expect("Did not find integer");
+        byu.parse_float("float", byu.data())
+            .expect("Did not find float");
         // byu.parse_int("dne", byu.data()).expect("Did not find nothing");
     }
 
     #[test]
     pub fn load_item_yaml() {
-        
         let yaml_data = "item1:\n  name: thing1\n  value: 10.0";
 
         let byu = BuffYamlUtil::new(yaml_data);
@@ -54,17 +54,20 @@ pub mod byu_tests {
 
     #[test]
     pub fn load_items_yaml() {
-        
         let yaml_data = "group:\n  item1:\n    name: thing1\n    value: 10.0\n  item2:\n    name: thing2\n    value: -1.0";
 
         let byu = BuffYamlUtil::new(yaml_data);
 
         let group = byu.item("group").expect("Didn't find group");
 
-        byu.parse_str("name", &group["item1"]).expect("Did not find item1/name");
-        byu.parse_str("name", &group["item2"]).expect("Did not find item2/name");
-        byu.parse_float("value", &group["item1"]).expect("Did not find item1/value");
-        byu.parse_float("value", &group["item2"]).expect("Did not find item2/value");
+        byu.parse_str("name", &group["item1"])
+            .expect("Did not find item1/name");
+        byu.parse_str("name", &group["item2"])
+            .expect("Did not find item2/name");
+        byu.parse_float("value", &group["item1"])
+            .expect("Did not find item1/value");
+        byu.parse_float("value", &group["item2"])
+            .expect("Did not find item2/value");
     }
 
     #[test]
@@ -78,10 +81,22 @@ pub mod byu_tests {
 
         let group = byu.item("group").expect("Didn't find group");
 
-        byu.parse_str("name", &group["item1"]).expect("Did not find item1/name");
-        byu.parse_str("name", &group["item2"]).expect("Did not find item2/name");
-        assert_eq!(byu.parse_floats("info", &group["item1"]).expect("Did not find item1/info"), vec![10.0, 9.0, 8.0, 7.0, 6.0], "wrong float list");
-        assert_eq!(byu.parse_floats("info", &group["item2"]).expect("Did not find item2/info"), vec![10.0, 9.0, 8.0, 7.0, 6.0], "wrong float list");
+        byu.parse_str("name", &group["item1"])
+            .expect("Did not find item1/name");
+        byu.parse_str("name", &group["item2"])
+            .expect("Did not find item2/name");
+        assert_eq!(
+            byu.parse_floats("info", &group["item1"])
+                .expect("Did not find item1/info"),
+            vec![10.0, 9.0, 8.0, 7.0, 6.0],
+            "wrong float list"
+        );
+        assert_eq!(
+            byu.parse_floats("info", &group["item2"])
+                .expect("Did not find item2/info"),
+            vec![10.0, 9.0, 8.0, 7.0, 6.0],
+            "wrong float list"
+        );
     }
 }
 

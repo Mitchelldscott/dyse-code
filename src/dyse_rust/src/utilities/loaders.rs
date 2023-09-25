@@ -15,7 +15,7 @@ extern crate yaml_rust;
 
 // use crate::comms::data_structures::*;
 use glob::glob;
-use std::{fmt, env, fs, path};
+use std::{env, fmt, fs, path};
 use yaml_rust::{yaml::Yaml, YamlLoader};
 
 pub static MAX_RECORDS_PER_CSV: u16 = 10000;
@@ -53,7 +53,6 @@ impl ByuParseError {
 
     pub fn float(item: &str, yaml_file: &str) -> ByuParseError {
         ByuParseError::new(format!("{item}: f64"), yaml_file)
-
     }
 
     pub fn string(item: &str, yaml_file: &str) -> ByuParseError {
@@ -93,11 +92,7 @@ impl BuffYamlUtil {
         let yaml_path = format!("{}/dysepy/data/robots/{}", project_root, name);
 
         let data_string = BuffYamlUtil::read_yaml_as_string(
-            format!(
-                "{}/{}.yaml",
-                yaml_path, yaml_name,
-            )
-            .as_str(),
+            format!("{}/{}.yaml", yaml_path, yaml_name,).as_str(),
         );
 
         BuffYamlUtil {
@@ -108,7 +103,12 @@ impl BuffYamlUtil {
 
     pub fn from_self(yaml_name: &str) -> BuffYamlUtil {
         let project_root = env::var("PROJECT_ROOT").expect("Project root not set");
-        BuffYamlUtil::robot(fs::read_to_string(format!("{}/dysepy/data/robots/self.txt", project_root)).unwrap().as_str(), yaml_name)
+        BuffYamlUtil::robot(
+            fs::read_to_string(format!("{}/dysepy/data/robots/self.txt", project_root))
+                .unwrap()
+                .as_str(),
+            yaml_name,
+        )
     }
 
     pub fn default(yaml_name: &str) -> BuffYamlUtil {
@@ -152,51 +152,39 @@ impl BuffYamlUtil {
 
     pub fn parse_ints(&self, item: &str, data: &Yaml) -> Result<Vec<i64>, ByuParseError> {
         match &data[item] {
-            Yaml::Array(list) => {
-                list
-                    .iter()
-                    .map(|x| {
-                        match x {
-                            Yaml::Integer(val) => Ok(*val),
-                            _ => Err(ByuParseError::int(item, &self.yaml_path))
-                        }
-                    })
-                    .collect()
-            },
+            Yaml::Array(list) => list
+                .iter()
+                .map(|x| match x {
+                    Yaml::Integer(val) => Ok(*val),
+                    _ => Err(ByuParseError::int(item, &self.yaml_path)),
+                })
+                .collect(),
             _ => Err(ByuParseError::int(item, &self.yaml_path)),
         }
     }
 
     pub fn parse_floats(&self, item: &str, data: &Yaml) -> Result<Vec<f64>, ByuParseError> {
         match &data[item] {
-            Yaml::Array(list) => {
-                list
-                    .iter()
-                    .map(|x| {
-                        match x {
-                            Yaml::Real(val) => Ok(val.parse::<f64>().unwrap()),
-                            _ => Err(ByuParseError::float(item, &self.yaml_path))
-                        }
-                    })
-                    .collect()
-            },
+            Yaml::Array(list) => list
+                .iter()
+                .map(|x| match x {
+                    Yaml::Real(val) => Ok(val.parse::<f64>().unwrap()),
+                    _ => Err(ByuParseError::float(item, &self.yaml_path)),
+                })
+                .collect(),
             _ => Err(ByuParseError::int(item, &self.yaml_path)),
         }
     }
 
     pub fn parse_strs(&self, item: &str, data: &Yaml) -> Result<Vec<String>, ByuParseError> {
         match &data[item] {
-            Yaml::Array(list) => {
-                list
-                    .iter()
-                    .map(|x| {
-                        match x {
-                            Yaml::String(val) => Ok(val.clone()),
-                            _ => Err(ByuParseError::int(item, &self.yaml_path))
-                        }
-                    })
-                    .collect()
-            },
+            Yaml::Array(list) => list
+                .iter()
+                .map(|x| match x {
+                    Yaml::String(val) => Ok(val.clone()),
+                    _ => Err(ByuParseError::int(item, &self.yaml_path)),
+                })
+                .collect(),
             _ => Err(ByuParseError::int(item, &self.yaml_path)),
         }
     }

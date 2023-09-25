@@ -367,7 +367,7 @@ impl EmbeddedTask {
         self.record_timer = Instant::now();
         let csvu = self.csvu.as_mut().unwrap();
         if csvu.record_count == 0 {
-            csvu.new_labels(EmbeddedTask::make_labels(
+            csvu.new_labels(EmbeddedTask::make_csv_labels(
                 self.name.clone(),
                 self.output.last().unwrap().len(),
             ));
@@ -511,21 +511,23 @@ impl RobotFirmware {
         byu: BuffYamlUtil,
         writer_tx: crossbeam_channel::Sender<ByteBuffer>,
     ) -> RobotFirmware {
-
-        let tasks: Vec<EmbeddedTask> = byu.data().as_hash()
-                .unwrap()
-                .iter()
-                .map(|(key, data)| {
-                    EmbeddedTask::named(
-                        key.as_str().unwrap().to_string(),
-                        byu.parse_str("driver", data).unwrap_or("NUL".to_string()),
-                        byu.parse_strs("inputs", data).unwrap_or(vec![]),
-                        byu.parse_floats("parameters", data).unwrap_or(vec![]),
-                        byu.parse_int("rate", data).unwrap_or(250) as u16,
-                        byu.parse_int("record", data).unwrap_or(-1) as u16,
-                        byu.parse_int("rate", data).unwrap_or(-1) as u16,
-                    )
-                }).collect();
+        let tasks: Vec<EmbeddedTask> = byu
+            .data()
+            .as_hash()
+            .unwrap()
+            .iter()
+            .map(|(key, data)| {
+                EmbeddedTask::named(
+                    key.as_str().unwrap().to_string(),
+                    byu.parse_str("driver", data).unwrap_or("NUL".to_string()),
+                    byu.parse_strs("inputs", data).unwrap_or(vec![]),
+                    byu.parse_floats("parameters", data).unwrap_or(vec![]),
+                    byu.parse_int("rate", data).unwrap_or(250) as u16,
+                    byu.parse_int("record", data).unwrap_or(-1) as u16,
+                    byu.parse_int("rate", data).unwrap_or(-1) as u16,
+                )
+            })
+            .collect();
 
         RobotFirmware {
             configured: vec![false; tasks.len()],

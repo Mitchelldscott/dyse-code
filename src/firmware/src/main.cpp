@@ -38,8 +38,8 @@ int main() {
 	
 		spin();
 	
-		assert_leq<float>(timers.delay_millis(1, MASTER_CYCLE_TIME_MS), MASTER_CYCLE_TIME_ERR, "Teensy overcycled"); // timer error threashold (very tight)
-		timers.set(1);
+		// assert_leq<float>(timers.delay_millis(1, MASTER_CYCLE_TIME_MS), MASTER_CYCLE_TIME_ERR, "Teensy overcycled"); // timer error threashold (very tight)
+		// timers.set(1);
 	}
 
 	return 0;

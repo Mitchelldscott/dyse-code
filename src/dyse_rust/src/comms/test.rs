@@ -50,7 +50,7 @@ pub mod robot_fw {
             crossbeam_channel::Sender<ByteBuffer>,
             crossbeam_channel::Receiver<ByteBuffer>,
         ) = crossbeam_channel::bounded(100);
-        
+
         let rs = RobotFirmware::new("penguin", writer_tx);
 
         rs.print();

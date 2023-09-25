@@ -153,7 +153,7 @@ impl HidReader {
     /// reader.spin();       // runs until watchdog times out
     /// ```
     pub fn spin(&mut self) {
-        self.wait_for_report_reply(255, 10);
+        self.wait_for_report_reply(255, 100);
 
         while !self.layer.control_flags.is_shutdown() {
             let loopt = Instant::now();
@@ -176,7 +176,7 @@ impl HidReader {
             // }
         }
 
-        self.wait_for_report_reply(255, 10);
+        self.wait_for_report_reply(255, 100);
     }
 
     /// Sends robot status report packet to [HidROS], waits for the reply packet,
