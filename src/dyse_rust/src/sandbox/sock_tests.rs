@@ -34,8 +34,8 @@ macro_rules! sock_uri {
     }};
 }
 
-pub fn packet_sum(dyseer: [u8; UDP_PACKET_SIZE]) -> u32 {
-    dyseer.iter().map(|x| *x as u32).sum()
+pub fn packet_sum(buffer: [u8; UDP_PACKET_SIZE]) -> u32 {
+    buffer.iter().map(|x| *x as u32).sum()
 }
 
 #[cfg(test)]
@@ -191,12 +191,12 @@ pub mod u_socks {
         let t = Instant::now();
         while t.elapsed().as_secs() < 1 {
             lt = Instant::now();
-            let mut dyseer = [0; UDP_PACKET_SIZE];
-            sock.recv(&mut dyseer);
+            let mut buffer = [0; UDP_PACKET_SIZE];
+            sock.recv(&mut buffer);
 
             assert_le!(lt.elapsed().as_micros(), 500, "Client read time us");
             assert_eq!(
-                packet_sum(dyseer),
+                packet_sum(buffer),
                 UDP_PACKET_SIZE as u32,
                 "Buffer read had incorrect sum"
             );
@@ -223,8 +223,8 @@ pub mod u_socks {
         let t = Instant::now();
         while t.elapsed().as_secs() < 1 {
             lt = Instant::now();
-            let dyseer = [1; UDP_PACKET_SIZE];
-            sock.send_to(dyseer, sock_uri!(1313));
+            let buffer = [1; UDP_PACKET_SIZE];
+            sock.send_to(buffer, sock_uri!(1313));
             assert_le!(lt.elapsed().as_micros(), 500, "Client send time us");
 
             while t.elapsed().as_millis() < millis {}
@@ -259,14 +259,14 @@ pub mod low_socks {
 
         let t = Instant::now();
         while t.elapsed().as_secs() < 4 {
-            let mut dyseer = SockBuffer::new();
-            let src = sock.recv(&mut dyseer.dyseer);
+            let mut buffer = SockBuffer::new();
+            let src = sock.recv(&mut buffer.buffer);
 
             sock.shutdown(false);
 
             match src.port() > 0 {
                 true => {
-                    let name = dyseer.sender_name();
+                    let name = buffer.sender_name();
                     match known_addrs.iter().find(|a| **a == src) {
                         Some(_) => {}
                         _ => {
@@ -308,12 +308,12 @@ pub mod low_socks {
         while lifetime.elapsed().as_secs() < 2 {
             sock.send_to(SockBuffer::stamp_packet(&sock.name), sock_uri!(1313));
 
-            let mut dyseer = SockBuffer::new();
-            let src = sock.recv(&mut dyseer.dyseer);
+            let mut buffer = SockBuffer::new();
+            let src = sock.recv(&mut buffer.buffer);
 
             match src.port() {
                 1313 => {
-                    let name = dyseer.sender_name();
+                    let name = buffer.sender_name();
                     sock.log(format!("Request from {}", name));
                     core_replies += 1;
                 }
@@ -359,16 +359,16 @@ pub mod mid_socks {
 
         let t = Instant::now();
         while sock.lifetime.elapsed().as_secs() < 4 {
-            let mut dyseer = SockBuffer::new();
-            let src = sock.recv(&mut dyseer.dyseer);
+            let mut buffer = SockBuffer::new();
+            let src = sock.recv(&mut buffer.buffer);
 
-            match (dyseer.mode(), src.port() > 0) {
+            match (buffer.mode(), src.port() > 0) {
                 (0, true) => {
                     sock.send_to(SockBuffer::stamp_packet(&sock.name), src);
                     sock.log(format!("Received 0 from {:?}", src));
                 }
                 (1, true) => {
-                    let (sender, names) = dyseer.parse_name_packet();
+                    let (sender, names) = buffer.parse_name_packet();
                     sock.discover_sock(&sender, &src);
                     sock.send_to(SockBuffer::stamp_packet(&sock.name), src); // reply timestamp to node registering as receiver
 
@@ -384,7 +384,7 @@ pub mod mid_socks {
                     sock.log(format!("Received 3 from {:?}", src));
                 }
                 (4, true) => {
-                    let sender = dyseer.sender_name();
+                    let sender = buffer.sender_name();
                     sock.log(format!("Received 4 from {}", sender));
                     sock.send_to(SockBuffer::stamp_packet(&sock.name), src);
                     sock.discover_sock(&sender, &src);
@@ -420,31 +420,31 @@ pub mod mid_socks {
         lifetime = Instant::now();
         let mut t = Instant::now();
         while lifetime.elapsed().as_secs() < 1 {
-            let mut dyseer = SockBuffer::new();
-            let src = sock.recv(&mut dyseer.dyseer);
+            let mut buffer = SockBuffer::new();
+            let src = sock.recv(&mut buffer.buffer);
 
             if name_replies < 1 || addr_replies < 1 {
                 sock.send_to(
                     SockBuffer::data_packet(&sock.name, &vec![]),
                     sock_uri!(1313),
                 );
-                match (src.port(), dyseer.mode()) {
+                match (src.port(), buffer.mode()) {
                     (1313, 0) => {}
                     (1313, 1) => {
                         name_replies += 1;
-                        let (_, names) = dyseer.parse_name_packet();
+                        let (_, names) = buffer.parse_name_packet();
                         sock.register_names(&names);
                         sock.log(format!("Received names from {:?}", names));
                     }
                     (1313, 2) => {
                         addr_replies += 1;
-                        let (_, addrs) = dyseer.parse_addr_packet();
+                        let (_, addrs) = buffer.parse_addr_packet();
                         sock.register_addrs(&addrs);
                         sock.log(format!("Received addr from {:?}", addrs));
                     }
                     (_, 4) => {
                         if src.port() > 0 {
-                            let (sender, data) = dyseer.parse_data_packet();
+                            let (sender, data) = buffer.parse_data_packet();
 
                             sock.log(format!("Received data from {} {:?}", sender, data));
                             data_replies += 1;
@@ -500,8 +500,8 @@ pub mod mid_socks {
         lifetime = Instant::now();
         let mut t = Instant::now();
         while lifetime.elapsed().as_secs() < 1 {
-            let mut dyseer = SockBuffer::new();
-            let src = sock.recv(&mut dyseer.dyseer);
+            let mut buffer = SockBuffer::new();
+            let src = sock.recv(&mut buffer.buffer);
 
             match src.port() {
                 1313 => {
@@ -510,7 +510,7 @@ pub mod mid_socks {
 
                 _ => {
                     if src.port() > 0 {
-                        let (sender, data) = dyseer.parse_data_packet();
+                        let (sender, data) = buffer.parse_data_packet();
 
                         sock.log(format!("Received data from {} {:?}", sender, data));
                         data_replies += 1;

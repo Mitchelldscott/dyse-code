@@ -1,9 +1,22 @@
+/********************************************************************************
+ *
+ *      ____                     ____          __           __       _
+ *     / __ \__  __________     /  _/___  ____/ /_  _______/ /______(_)__  _____
+ *    / / / / / / / ___/ _ \    / // __ \/ __  / / / / ___/ __/ ___/ / _ \/ ___/
+ *   / /_/ / /_/ (__  )  __/  _/ // / / / /_/ / /_/ (__  ) /_/ /  / /  __(__  )
+ *  /_____/\__, /____/\___/  /___/_/ /_/\__,_/\__,_/____/\__/_/  /_/\___/____/
+ *        /____/
+ *
+ *
+ *
+ ********************************************************************************/
+
 extern crate yaml_rust;
 
-use crate::comms::data_structures::*;
+// use crate::comms::data_structures::*;
 use glob::glob;
-use std::{env, fs, path};
-use yaml_rust::{yaml::Yaml, Yaml::Integer, YamlLoader};
+use std::{fmt, env, fs, path};
+use yaml_rust::{yaml::Yaml, YamlLoader};
 
 pub static MAX_RECORDS_PER_CSV: u16 = 10000;
 pub static MAX_FILES_PER_RUN: u16 = 120;
@@ -20,10 +33,47 @@ pub fn assert_file(path: &path::Path) {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ByuParseError {
+    pub item: String,
+    pub yaml_file: String,
+}
+
+impl ByuParseError {
+    pub fn new(item: String, yaml_file: &str) -> ByuParseError {
+        ByuParseError {
+            item: item,
+            yaml_file: yaml_file.to_string(),
+        }
+    }
+
+    pub fn int(item: &str, yaml_file: &str) -> ByuParseError {
+        ByuParseError::new(format!("{item}: i64"), yaml_file)
+    }
+
+    pub fn float(item: &str, yaml_file: &str) -> ByuParseError {
+        ByuParseError::new(format!("{item}: f64"), yaml_file)
+
+    }
+
+    pub fn string(item: &str, yaml_file: &str) -> ByuParseError {
+        ByuParseError::new(format!("{item}: String"), yaml_file)
+    }
+
+    pub fn item(item: &str, yaml_file: &str) -> ByuParseError {
+        ByuParseError::new(format!("{item}: Item"), yaml_file)
+    }
+}
+
+impl fmt::Display for ByuParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} not found in {}", self.item, self.yaml_file)
+    }
+}
+
 pub struct BuffYamlUtil {
     pub yaml_path: String,
-    pub node_data: Yaml,
-    pub task_data: Yaml,
+    pub data: Yaml,
 }
 
 impl BuffYamlUtil {
@@ -31,185 +81,124 @@ impl BuffYamlUtil {
         fs::read_to_string(yaml_path).expect(format!("No config in {}", yaml_path).as_str())
     }
 
-    pub fn new(bot_name: &str) -> BuffYamlUtil {
-        let robot_name = bot_name;
+    pub fn new(data: &str) -> BuffYamlUtil {
+        BuffYamlUtil {
+            yaml_path: "no file".to_string(),
+            data: YamlLoader::load_from_str(data).unwrap()[0].clone(),
+        }
+    }
+
+    pub fn robot(name: &str, yaml_name: &str) -> BuffYamlUtil {
         let project_root = env::var("PROJECT_ROOT").expect("Project root not set");
+        let yaml_path = format!("{}/dysepy/data/robots/{}", project_root, name);
 
-        let yaml_path = format!("{}/dysepy/data/robots/{}", project_root, robot_name);
-
-        let node_string = BuffYamlUtil::read_yaml_as_string(
+        let data_string = BuffYamlUtil::read_yaml_as_string(
             format!(
-                "{}/dysepy/data/robots/{}/nodes.yaml",
-                project_root, robot_name
-            )
-            .as_str(),
-        );
-
-        let task_string = BuffYamlUtil::read_yaml_as_string(
-            format!(
-                "{}/dysepy/data/robots/{}/firmware_tasks.yaml",
-                project_root, robot_name
+                "{}/{}.yaml",
+                yaml_path, yaml_name,
             )
             .as_str(),
         );
 
         BuffYamlUtil {
             yaml_path: yaml_path,
-            node_data: YamlLoader::load_from_str(node_string.as_str()).unwrap()[0].clone(),
-            task_data: YamlLoader::load_from_str(task_string.as_str()).unwrap()[0].clone(),
+            data: YamlLoader::load_from_str(data_string.as_str()).unwrap()[0].clone(),
         }
     }
 
-    pub fn from_self() -> BuffYamlUtil {
+    pub fn from_self(yaml_name: &str) -> BuffYamlUtil {
         let project_root = env::var("PROJECT_ROOT").expect("Project root not set");
-        let self_path = format!("{}/dysepy/data/robots/self.txt", project_root);
-        let robot_name = fs::read_to_string(self_path).unwrap();
-        BuffYamlUtil::new(robot_name.as_str())
+        BuffYamlUtil::robot(fs::read_to_string(format!("{}/dysepy/data/robots/self.txt", project_root)).unwrap().as_str(), yaml_name)
     }
 
-    pub fn default() -> BuffYamlUtil {
+    pub fn default(yaml_name: &str) -> BuffYamlUtil {
         match env::var("ROBOT_NAME") {
-            Ok(robot_name) => BuffYamlUtil::new(&robot_name.as_str()),
-            _ => BuffYamlUtil::from_self(),
+            Ok(robot_name) => BuffYamlUtil::robot(&robot_name.as_str(), yaml_name),
+            _ => BuffYamlUtil::from_self(yaml_name),
         }
     }
 
-    pub fn load_string(&self, item: &str) -> String {
-        self.node_data[item].as_str().unwrap().to_string()
+    pub fn data(&self) -> &Yaml {
+        &self.data
     }
 
-    pub fn load_u16(&self, item: &str) -> u16 {
-        self.node_data[item].as_i64().unwrap() as u16
+    pub fn item(&self, item: &str) -> Result<&Yaml, ByuParseError> {
+        match self.data[item].is_badvalue() {
+            false => Ok(&self.data[item]),
+            true => Err(ByuParseError::item(item, &self.yaml_path)),
+        }
     }
 
-    pub fn load_u128(&self, item: &str) -> u128 {
-        self.node_data[item].as_i64().unwrap() as u128
+    pub fn parse_int(&self, item: &str, data: &Yaml) -> Result<i64, ByuParseError> {
+        match &data[item] {
+            Yaml::Integer(val) => Ok(*val),
+            _ => Err(ByuParseError::int(item, &self.yaml_path)),
+        }
     }
 
-    pub fn load_string_list(&self, item: &str) -> Vec<String> {
-        self.node_data[item]
-            .as_vec()
-            .unwrap()
-            .iter()
-            .map(|x| x.as_str().unwrap().to_string())
-            .collect()
+    pub fn parse_float(&self, item: &str, data: &Yaml) -> Result<f64, ByuParseError> {
+        match &data[item] {
+            Yaml::Real(val) => Ok(val.parse::<f64>().unwrap()),
+            _ => Err(ByuParseError::float(item, &self.yaml_path)),
+        }
     }
 
-    pub fn load_u8_list(&self, item: &str) -> Vec<u8> {
-        self.node_data[item]
-            .as_vec()
-            .unwrap()
-            .iter()
-            .map(|x| x.as_i64().unwrap() as u8)
-            .collect()
+    pub fn parse_str(&self, item: &str, data: &Yaml) -> Result<String, ByuParseError> {
+        match &data[item] {
+            Yaml::String(val) => Ok(val.clone()),
+            _ => Err(ByuParseError::string(item, &self.yaml_path)),
+        }
     }
 
-    pub fn load_integer_matrix(&self, item: &str) -> Vec<Vec<u8>> {
-        self.node_data[item]
-            .as_vec()
-            .unwrap()
-            .iter()
-            .map(|x| {
-                x.as_vec()
-                    .unwrap()
+    pub fn parse_ints(&self, item: &str, data: &Yaml) -> Result<Vec<i64>, ByuParseError> {
+        match &data[item] {
+            Yaml::Array(list) => {
+                list
                     .iter()
-                    .map(|x| x.as_i64().unwrap() as u8)
+                    .map(|x| {
+                        match x {
+                            Yaml::Integer(val) => Ok(*val),
+                            _ => Err(ByuParseError::int(item, &self.yaml_path))
+                        }
+                    })
                     .collect()
-            })
-            .collect()
+            },
+            _ => Err(ByuParseError::int(item, &self.yaml_path)),
+        }
     }
 
-    pub fn load_float_matrix(&self, item: &str) -> Vec<Vec<f64>> {
-        self.node_data[item]
-            .as_vec()
-            .unwrap()
-            .iter()
-            .map(|x| {
-                x.as_vec()
-                    .unwrap()
+    pub fn parse_floats(&self, item: &str, data: &Yaml) -> Result<Vec<f64>, ByuParseError> {
+        match &data[item] {
+            Yaml::Array(list) => {
+                list
                     .iter()
-                    .map(|x| x.as_f64().unwrap())
+                    .map(|x| {
+                        match x {
+                            Yaml::Real(val) => Ok(val.parse::<f64>().unwrap()),
+                            _ => Err(ByuParseError::float(item, &self.yaml_path))
+                        }
+                    })
                     .collect()
-            })
-            .collect()
+            },
+            _ => Err(ByuParseError::int(item, &self.yaml_path)),
+        }
     }
 
-    // clean up at some point, use a function to search a string in the hash of an item or something
-    pub fn parse_tasks(data: &Yaml) -> Vec<EmbeddedTask> {
-        data.as_hash()
-            .unwrap()
-            .iter()
-            .map(|(key, value)| {
-                let name = key.as_str().unwrap();
-                let mut inputs = vec![];
-                let mut config = vec![];
-                let mut driver = "UNKNOWN".to_string();
-                let mut rate = 250;
-                let mut record = 0;
-                let mut publish = 0;
-
-                value.as_vec().unwrap().iter().for_each(|item| {
-                    item.as_hash()
-                        .unwrap()
-                        .iter()
-                        .for_each(|(k, v)| match k.as_str().unwrap() {
-                            "inputs" => {
-                                inputs = v
-                                    .as_vec()
-                                    .unwrap()
-                                    .to_vec()
-                                    .iter()
-                                    .map(|name| name.as_str().unwrap().to_string())
-                                    .collect();
-                            }
-                            "parameters" => {
-                                v.as_vec().unwrap().iter().for_each(|x| match x {
-                                    Yaml::Real(_) => config.push(x.as_f64().unwrap()),
-                                    Yaml::Array(a) => {
-                                        a.iter().for_each(|n| config.push(n.as_f64().unwrap()))
-                                    }
-                                    _ => {}
-                                });
-                            }
-                            "driver" => {
-                                driver = v.as_str().unwrap().to_string();
-                            }
-                            "rate" => {
-                                rate = match v {
-                                    Integer(val) => *val as u16,
-                                    _ => 0,
-                                };
-                            }
-                            "record" => {
-                                record = match v {
-                                    Integer(val) => *val as u16,
-                                    _ => 0,
-                                };
-                            }
-                            "publish" => {
-                                publish = match v {
-                                    Integer(val) => *val as u16,
-                                    _ => 0,
-                                };
-                            }
-                            _ => {}
-                        });
-                });
-                EmbeddedTask::named(
-                    name.to_string(),
-                    driver,
-                    inputs,
-                    config,
-                    rate,
-                    record,
-                    publish,
-                )
-            })
-            .collect()
-    }
-
-    pub fn load_tasks(&self) -> Vec<EmbeddedTask> {
-        BuffYamlUtil::parse_tasks(&self.task_data)
+    pub fn parse_strs(&self, item: &str, data: &Yaml) -> Result<Vec<String>, ByuParseError> {
+        match &data[item] {
+            Yaml::Array(list) => {
+                list
+                    .iter()
+                    .map(|x| {
+                        match x {
+                            Yaml::String(val) => Ok(val.clone()),
+                            _ => Err(ByuParseError::int(item, &self.yaml_path))
+                        }
+                    })
+                    .collect()
+            },
+            _ => Err(ByuParseError::int(item, &self.yaml_path)),
+        }
     }
 }
 

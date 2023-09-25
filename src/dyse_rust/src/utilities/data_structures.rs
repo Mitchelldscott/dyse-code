@@ -13,7 +13,7 @@
 
 use ::std::time::Instant;
 
-/// dyseer for byte packet storage
+/// buffer for byte packet storage
 ///  stores the data, timestamp of the last access
 ///  and a flag for updates.
 #[derive(Clone)]
@@ -26,7 +26,7 @@ pub struct ByteBuffer {
 impl ByteBuffer {
     pub fn new(n: usize) -> ByteBuffer {
         /*
-            Create a new dyseer.
+            Create a new buffer.
         */
         ByteBuffer {
             data: vec![0; n],
@@ -45,19 +45,19 @@ impl ByteBuffer {
 
     pub fn hid() -> ByteBuffer {
         /*
-            Create a new 64 byte dyseer.
+            Create a new 64 byte buffer.
         */
         ByteBuffer::new(64)
     }
 
     pub fn tcp() -> ByteBuffer {
         /*
-            Create a new 1024 byte dyseer.
+            Create a new 1024 byte buffer.
         */
         ByteBuffer::new(1024)
     }
 
-    pub fn dyseer(&self) -> &Vec<u8> {
+    pub fn buffer(&self) -> &Vec<u8> {
         &self.data
     }
 
@@ -69,7 +69,7 @@ impl ByteBuffer {
 
     pub fn get(&self, idx: usize) -> u8 {
         /*
-            Read a value in the dyseer.
+            Read a value in the buffer.
         */
         self.validate_index(idx);
         self.data[idx]
@@ -77,7 +77,7 @@ impl ByteBuffer {
 
     pub fn put(&mut self, idx: usize, value: u8) {
         /*
-            Write a value in the dyseer.
+            Write a value in the buffer.
         */
         self.validate_index(idx);
         self.data[idx] = value;
@@ -85,7 +85,7 @@ impl ByteBuffer {
 
     pub fn get_i32(&self, idx: usize) -> i32 {
         /*
-            Read an i32 from the dyseer.
+            Read an i32 from the buffer.
         */
         self.validate_index(idx);
         self.validate_index(idx + 3);
@@ -99,7 +99,7 @@ impl ByteBuffer {
 
     pub fn get_u32(&self, idx: usize) -> u32 {
         /*
-            Read an i32 from the dyseer.
+            Read an i32 from the buffer.
         */
         self.validate_index(idx);
         self.validate_index(idx + 3);
@@ -113,14 +113,14 @@ impl ByteBuffer {
 
     pub fn put_i32(&mut self, idx: usize, value: i32) {
         /*
-            Write an i32 to the dyseer.
+            Write an i32 to the buffer.
         */
         self.puts(idx, value.to_le_bytes().to_vec());
     }
 
     pub fn get_float(&self, idx: usize) -> f64 {
         /*
-            Read an f32 from the dyseer.
+            Read an f32 from the buffer.
             return as f64 just because.
         */
         self.validate_index(idx);
@@ -135,7 +135,7 @@ impl ByteBuffer {
 
     pub fn get_floats(&self, idx: usize, n: usize) -> Vec<f64> {
         /*
-            Read an f32 from the dyseer.
+            Read an f32 from the buffer.
             return as f64 just because.
         */
         self.data[idx..idx + (4 * n)]
@@ -146,7 +146,7 @@ impl ByteBuffer {
 
     pub fn put_float(&mut self, idx: usize, value: f64) {
         /*
-            Write an f64 to the dyseer.
+            Write an f64 to the buffer.
             actually writes as f32
         */
         self.puts(idx, (value as f32).to_le_bytes().to_vec());
@@ -154,7 +154,7 @@ impl ByteBuffer {
 
     pub fn put_floats(&mut self, idx: usize, values: Vec<f64>) {
         /*
-            Write an f64 to the dyseer.
+            Write an f64 to the buffer.
             actually writes as f32
         */
         values
@@ -165,7 +165,7 @@ impl ByteBuffer {
 
     pub fn gets(&self, idx: usize, n: usize) -> Vec<u8> {
         /*
-            Read a vec of values from the dyseer.
+            Read a vec of values from the buffer.
         */
         self.validate_index(idx);
         self.validate_index(idx + n - 1);
@@ -174,7 +174,7 @@ impl ByteBuffer {
 
     pub fn puts(&mut self, idx: usize, data: Vec<u8>) {
         /*
-            Write a vec of values to the dyseer.
+            Write a vec of values to the buffer.
         */
         self.validate_index(idx);
         self.validate_index(idx + data.len() - 1);
@@ -183,7 +183,7 @@ impl ByteBuffer {
 
     pub fn reset(&mut self, n: usize) {
         /*
-            Reset the dyseer.
+            Reset the buffer.
         */
         self.data = vec![0u8; n];
         self.update_flag = false;
@@ -192,7 +192,7 @@ impl ByteBuffer {
 
     pub fn print(&self) {
         /*
-            Print the dyseer.
+            Print the buffer.
         */
         let mut data_string: String = "\n\n==========\n".to_string();
 

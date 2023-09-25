@@ -1,0 +1,51 @@
+TARGET = Some("x86_64-apple-darwin")
+OPT_LEVEL = Some("0")
+HOST = Some("x86_64-apple-darwin")
+cargo:rerun-if-env-changed=CC_x86_64-apple-darwin
+CC_x86_64-apple-darwin = None
+cargo:rerun-if-env-changed=CC_x86_64_apple_darwin
+CC_x86_64_apple_darwin = None
+cargo:rerun-if-env-changed=HOST_CC
+HOST_CC = None
+cargo:rerun-if-env-changed=CC
+CC = None
+cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS
+CRATE_CC_NO_DEFAULTS = None
+DEBUG = Some("true")
+CARGO_CFG_TARGET_FEATURE = Some("fxsr,sse,sse2,sse3,ssse3")
+cargo:rerun-if-env-changed=CFLAGS_x86_64-apple-darwin
+CFLAGS_x86_64-apple-darwin = None
+cargo:rerun-if-env-changed=CFLAGS_x86_64_apple_darwin
+CFLAGS_x86_64_apple_darwin = None
+cargo:rerun-if-env-changed=HOST_CFLAGS
+HOST_CFLAGS = None
+cargo:rerun-if-env-changed=CFLAGS
+CFLAGS = None
+running: "cc" "-O0" "-ffunction-sections" "-fdata-sections" "-fPIC" "-gdwarf-2" "-fno-omit-frame-pointer" "-m64" "-arch" "x86_64" "-I" "etc/hidapi/hidapi" "-Wall" "-Wextra" "-o" "/Users/mitchellscott/Desktop/dyse-code/src/dyse_rust/target/debug/build/hidapi-066aca6572dade8c/out/etc/hidapi/mac/hid.o" "-c" "etc/hidapi/mac/hid.c"
+exit status: 0
+cargo:rerun-if-env-changed=AR_x86_64-apple-darwin
+AR_x86_64-apple-darwin = None
+cargo:rerun-if-env-changed=AR_x86_64_apple_darwin
+AR_x86_64_apple_darwin = None
+cargo:rerun-if-env-changed=HOST_AR
+HOST_AR = None
+cargo:rerun-if-env-changed=AR
+AR = None
+cargo:rerun-if-env-changed=ARFLAGS_x86_64-apple-darwin
+ARFLAGS_x86_64-apple-darwin = None
+cargo:rerun-if-env-changed=ARFLAGS_x86_64_apple_darwin
+ARFLAGS_x86_64_apple_darwin = None
+cargo:rerun-if-env-changed=HOST_ARFLAGS
+HOST_ARFLAGS = None
+cargo:rerun-if-env-changed=ARFLAGS
+ARFLAGS = None
+running: "ar" "cq" "/Users/mitchellscott/Desktop/dyse-code/src/dyse_rust/target/debug/build/hidapi-066aca6572dade8c/out/libhidapi.a" "/Users/mitchellscott/Desktop/dyse-code/src/dyse_rust/target/debug/build/hidapi-066aca6572dade8c/out/etc/hidapi/mac/hid.o"
+exit status: 0
+running: "ar" "s" "/Users/mitchellscott/Desktop/dyse-code/src/dyse_rust/target/debug/build/hidapi-066aca6572dade8c/out/libhidapi.a"
+exit status: 0
+cargo:rustc-link-lib=static=hidapi
+cargo:rustc-link-search=native=/Users/mitchellscott/Desktop/dyse-code/src/dyse_rust/target/debug/build/hidapi-066aca6572dade8c/out
+cargo:rustc-cfg=hidapi
+cargo:rustc-link-lib=framework=IOKit
+cargo:rustc-link-lib=framework=CoreFoundation
+cargo:rustc-link-lib=framework=AppKit

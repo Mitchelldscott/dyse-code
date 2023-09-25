@@ -49,7 +49,7 @@ impl HidReader {
         self.input.print();
     }
 
-    pub fn dyseer(&self) -> ByteBuffer {
+    pub fn buffer(&self) -> ByteBuffer {
         self.input.clone()
     }
 
@@ -67,7 +67,7 @@ impl HidReader {
         }
     }
 
-    /// Read data into the input dyseer and return how many bytes were read
+    /// Read data into the input buffer and return how many bytes were read
     ///
     /// # Usage
     ///

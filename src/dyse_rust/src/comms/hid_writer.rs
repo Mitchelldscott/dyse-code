@@ -47,15 +47,15 @@ impl HidWriter {
         self.output.print();
     }
 
-    pub fn dyseer(&self) -> &ByteBuffer {
+    pub fn buffer(&self) -> &ByteBuffer {
         &self.output
     }
 
     pub fn silent_channel_default(&mut self) -> ByteBuffer {
-        let mut dyseer = ByteBuffer::hid();
-        dyseer.puts(0, vec![255, 255]);
-        dyseer.put_float(2, self.layer.pc_stats.packets_sent());
-        dyseer
+        let mut buffer = ByteBuffer::hid();
+        buffer.puts(0, vec![255, 255]);
+        buffer.put_float(2, self.layer.pc_stats.packets_sent());
+        buffer
     }
 
     pub fn reconnect(&mut self) {
@@ -76,7 +76,7 @@ impl HidWriter {
         }
     }
 
-    /// Write the bytes from the output dyseer to the teensy, then clear the dyseer.
+    /// Write the bytes from the output buffer to the teensy, then clear the buffer.
     /// Shutdown if the write fails.
     /// # Usage
     /// ```

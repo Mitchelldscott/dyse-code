@@ -50,6 +50,7 @@ pub mod robot_fw {
             crossbeam_channel::Sender<ByteBuffer>,
             crossbeam_channel::Receiver<ByteBuffer>,
         ) = crossbeam_channel::bounded(100);
+        
         let rs = RobotFirmware::new("penguin", writer_tx);
 
         rs.print();
@@ -57,7 +58,7 @@ pub mod robot_fw {
         rs.task_init_packets().iter().for_each(|packet| {
             let mut total_items = 0;
             // packet.print();
-            packet.dyseer().iter().for_each(|b| {
+            packet.buffer().iter().for_each(|b| {
                 if *b != 0 {
                     total_items += 1;
                 }
@@ -145,10 +146,10 @@ pub mod dead_comms {
             let loopt = Instant::now();
 
             if interface.layer.control_flags.is_connected() {
-                let mut dyseer = ByteBuffer::hid();
-                dyseer.puts(0, vec![255, 255]);
-                dyseer.put_float(2, interface.layer.pc_stats.packets_sent());
-                interface.writer_tx(dyseer);
+                let mut buffer = ByteBuffer::hid();
+                buffer.puts(0, vec![255, 255]);
+                buffer.put_float(2, interface.layer.pc_stats.packets_sent());
+                interface.writer_tx(buffer);
                 interface.check_feedback();
             }
 

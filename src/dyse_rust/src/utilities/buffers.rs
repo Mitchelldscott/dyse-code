@@ -60,7 +60,7 @@ impl PageBuffer {
         self.timestamp = Instant::now();
     }
 
-    pub fn print_dyseer(&self) {
+    pub fn print_buffer(&self) {
         let mut data_string: String = String::new();
 
         let mut i = 0;

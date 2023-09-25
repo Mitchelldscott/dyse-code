@@ -199,12 +199,10 @@ pub struct EmbeddedTask {
 
     pub csvu: Option<CsvUtil>,
     pub record_timer: Instant,
-    // pub publisher: Option<rosrust::Publisher<std_msgs::Float64MultiArray>>,
-    // pub publish_timer: Instant,
 }
 
 impl EmbeddedTask {
-    pub fn make_labels(vector_label: String, length: usize) -> Vec<String> {
+    pub fn make_csv_labels(vector_label: String, length: usize) -> Vec<String> {
         if length > 0 {
             (0..length)
                 .map(|i| format!("{}[{}]", vector_label, i))
@@ -429,13 +427,13 @@ impl EmbeddedTask {
 }
 
 pub fn get_task_reset_packet(id: u8, rate: u16, driver: Vec<u8>, input_ids: Vec<u8>) -> ByteBuffer {
-    let mut dyseer = ByteBuffer::hid();
-    dyseer.puts(0, vec![INIT_REPORT_ID, INIT_NODE_MODE, id]);
-    dyseer.puts(3, (1000 / rate).to_le_bytes().to_vec());
-    dyseer.puts(5, driver);
-    dyseer.put(10, input_ids.len() as u8);
-    dyseer.puts(11, input_ids);
-    dyseer
+    let mut buffer = ByteBuffer::hid();
+    buffer.puts(0, vec![INIT_REPORT_ID, INIT_NODE_MODE, id]);
+    buffer.puts(3, (1000 / rate).to_le_bytes().to_vec());
+    buffer.puts(5, driver);
+    buffer.put(10, input_ids.len() as u8);
+    buffer.puts(11, input_ids);
+    buffer
 }
 
 pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<ByteBuffer> {
@@ -443,8 +441,8 @@ pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<ByteBuff
         .chunks(MAX_HID_FLOAT_DATA)
         .enumerate()
         .map(|(i, chunk)| {
-            let mut dyseer = ByteBuffer::hid();
-            dyseer.puts(
+            let mut buffer = ByteBuffer::hid();
+            buffer.puts(
                 0,
                 vec![
                     INIT_REPORT_ID,
@@ -455,7 +453,7 @@ pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<ByteBuff
                 ],
             );
 
-            dyseer.puts(
+            buffer.puts(
                 5,
                 chunk
                     .into_iter()
@@ -464,7 +462,7 @@ pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<ByteBuff
                     .collect(),
             );
 
-            dyseer
+            buffer
         })
         .collect()
 }
@@ -483,10 +481,10 @@ pub fn get_task_initializers(
 }
 
 pub fn get_latch_packet(i: u8, latch: u8, data: Vec<f64>) -> ByteBuffer {
-    let mut dyseer = ByteBuffer::hid();
-    dyseer.puts(0, vec![TASK_CONTROL_ID, i, latch, data.len() as u8]);
-    dyseer.put_floats(4, data);
-    dyseer
+    let mut buffer = ByteBuffer::hid();
+    buffer.puts(0, vec![TASK_CONTROL_ID, i, latch, data.len() as u8]);
+    buffer.put_floats(4, data);
+    buffer
 }
 
 pub fn disable_latch(i: u8) -> ByteBuffer {
@@ -513,48 +511,30 @@ impl RobotFirmware {
         byu: BuffYamlUtil,
         writer_tx: crossbeam_channel::Sender<ByteBuffer>,
     ) -> RobotFirmware {
-        // rosrust::init("dyse_comms");
 
-        let tasks = byu.load_tasks();
-
-        // let task_input_subs = (0..tasks.len())
-        //     .map(|i| {
-        //         let writer_clone = writer_tx.clone();
-        //         rosrust::subscribe(
-        //             &format!("{}_ictrl", tasks[i].name),
-        //             1,
-        //             move |msg: std_msgs::Float64MultiArray| {
-        //                 writer_clone.send(input_latch(i as u8, msg.data)).unwrap();
-        //             },
-        //         )
-        //         .unwrap()
-        //     })
-        //     .collect();
-
-        // let task_output_subs = (0..tasks.len())
-        //     .map(|i| {
-        //         let writer_clone = writer_tx.clone();
-        //         rosrust::subscribe(
-        //             &format!("{}_octrl", tasks[i].name),
-        //             1,
-        //             move |msg: std_msgs::Float64MultiArray| {
-        //                 writer_clone.send(output_latch(i as u8, msg.data)).unwrap();
-        //             },
-        //         )
-        //         .unwrap()
-        //     })
-        //     .collect();
+        let tasks: Vec<EmbeddedTask> = byu.data().as_hash()
+                .unwrap()
+                .iter()
+                .map(|(key, data)| {
+                    EmbeddedTask::named(
+                        key.as_str().unwrap().to_string(),
+                        byu.parse_str("driver", data).unwrap_or("NUL".to_string()),
+                        byu.parse_strs("inputs", data).unwrap_or(vec![]),
+                        byu.parse_floats("parameters", data).unwrap_or(vec![]),
+                        byu.parse_int("rate", data).unwrap_or(250) as u16,
+                        byu.parse_int("record", data).unwrap_or(-1) as u16,
+                        byu.parse_int("rate", data).unwrap_or(-1) as u16,
+                    )
+                }).collect();
 
         RobotFirmware {
             configured: vec![false; tasks.len()],
             tasks: tasks,
-            // task_input_subs: task_input_subs,
-            // task_output_subs: task_output_subs,
         }
     }
 
     pub fn default(writer_tx: crossbeam_channel::Sender<ByteBuffer>) -> RobotFirmware {
-        let byu = BuffYamlUtil::default();
+        let byu = BuffYamlUtil::default("firmware_tasks");
         RobotFirmware::from_byu(byu, writer_tx)
     }
 
@@ -562,12 +542,12 @@ impl RobotFirmware {
         robot_name: &str,
         writer_tx: crossbeam_channel::Sender<ByteBuffer>,
     ) -> RobotFirmware {
-        let byu = BuffYamlUtil::new(robot_name);
+        let byu = BuffYamlUtil::robot(robot_name, "firmware_tasks");
         RobotFirmware::from_byu(byu, writer_tx)
     }
 
     pub fn from_self(writer_tx: crossbeam_channel::Sender<ByteBuffer>) -> RobotFirmware {
-        let byu = BuffYamlUtil::from_self();
+        let byu = BuffYamlUtil::from_self("firmware_tasks");
         RobotFirmware::from_byu(byu, writer_tx)
     }
 
