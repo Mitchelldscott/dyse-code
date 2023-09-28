@@ -40,44 +40,55 @@
 #define CYCLES_2_NS(cycles)  	(float(cycles) * (1E9 / float(F_CPU_ACTUAL)))
 
 // Get time duration from two cycle counts
-#define DURATION_S(cyccnt1, cyccnt2) (CYCLES_TO_S(cyccnt2 - cyccnt1))
-#define DURATION_MS(cyccnt1, cyccnt2) (CYCLES_TO_MS(cyccnt2 - cyccnt1))
-#define DURATION_US(cyccnt1, cyccnt2) (CYCLES_TO_US(cyccnt2 - cyccnt1))
-#define DURATION_NS(cyccnt1, cyccnt2) (CYCLES_TO_NS(cyccnt2 - cyccnt1))
+#define DURATION_S(cyccnt1, cyccnt2) 	(CYCLES_2_S(cyccnt2 - cyccnt1))
+#define DURATION_MS(cyccnt1, cyccnt2) 	(CYCLES_2_MS(cyccnt2 - cyccnt1))
+#define DURATION_US(cyccnt1, cyccnt2) 	(CYCLES_2_US(cyccnt2 - cyccnt1))
+#define DURATION_NS(cyccnt1, cyccnt2) 	(CYCLES_2_NS(cyccnt2 - cyccnt1))
 
-#define MAX_NUM_TIMERS 	10
-#define MAX_CYCCNT 		float(0xFFFFFFFF)
+#define MAX_CYCCNT 		0xFFFFFFFF
 
 /*
 	Class to provide multiple timers that have exceptional
 	precision (Still hardware limited).
 */
 
-class FTYK {
-	private:
-		int active_timers[MAX_NUM_TIMERS];
-		int cyccnt_mark[MAX_NUM_TIMERS];
-		float seconds[MAX_NUM_TIMERS];
-		int minutes[MAX_NUM_TIMERS];
-		int hours[MAX_NUM_TIMERS];
+struct FTYK {
+	int cyccnt_mark;
 
-	public:
-		FTYK();
-		void set(int);
-		void mark(int);
-		void accumulate_cycles(int, int);
-		void cycles(int);
-		float nanos(int);
-		float micros(int);
-		float millis(int);
-		float secs(int);
-		int mins(int);
-		int hrs(int);
-		float total_seconds(int);
-		float delay_micros(int, float);
-		float delay_millis(int, float);
-		void print(int);
-		void print(int, const char*);
+
+	FTYK();
+	void set();
+
+	float cycles();
+	float nanos();
+	float micros();
+	float millis();
+	float secs();
+
+	float delay_micros(float);
+	float delay_millis(float);
+
+	void print();
+	void print(const char*);
+};
+
+struct Timestamp {
+	FTYK timer;
+
+	int hours;
+	int minutes;
+	float seconds;
+
+	Timestamp();
+	void set();
+	void wrap();
+	void accumulate(float);
+	void update();
+	float total_seconds();
+	float secs();
+	void sync(Timestamp);
+	void sync(float);
+	void print();
 };
 
 #endif

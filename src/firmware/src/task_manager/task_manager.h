@@ -21,13 +21,17 @@
 #define RUN_STATUS_PIN 3
 #define CONFIGURATION_STATUS_PIN 2
 
+
 CommsPipeline* init_task_manager();
 
 int node_index(int);
+bool link_nodes(int);
 void add_task(TaskSetupPacket*);
 void update_task(TaskSetupPacket*);
-Vector<float> collect_outputs(int);
-
+void overwrite_task(TaskSetupPacket*);
+void task_setup_handler();
+void task_publish_handler(int);
+void update_system_indicator();
 void spin();
 void dump_all_tasks();
 

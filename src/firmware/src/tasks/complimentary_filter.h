@@ -13,7 +13,6 @@
 class ComplimentaryFilter: public Task {
 	private:
 		char key[3] = {'C', 'M', 'F'};
-		FTYK timers;
 		float axz_norm = 0;
 		float ayz_norm = 0;
 		float mag_norm = 0;
@@ -29,13 +28,11 @@ class ComplimentaryFilter: public Task {
 			dimensions[PARAM_DIMENSION] = 1;
 			dimensions[OUTPUT_DIMENSION] = ATTITUDE_DIM;
 
-			timers.set(0);
 			reset();
 		}
 
 		void setup(Vector<float>* config) {
 			K = (*config)[0];
-			timers.set(0);
 			for (int i = 0; i < ATTITUDE_DIM; i++) {
 				q_accel[i] = 0;
 				q_gyro[i] = 0;

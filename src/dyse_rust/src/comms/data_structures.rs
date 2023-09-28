@@ -334,8 +334,9 @@ impl EmbeddedTask {
         );
         if self.output.len() > 0 {
             println!(
-                "\toutput: [{}s]\n\t\t{:?}",
+                "\toutput: [{}s,{}]\n\t\t{:?}",
                 self.timestamp.last().unwrap(),
+                self.output.len(),
                 self.output.last().unwrap()
             );
         }

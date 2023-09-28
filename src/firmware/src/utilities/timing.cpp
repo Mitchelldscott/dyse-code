@@ -25,51 +25,29 @@ FTYK::FTYK() {
 			This will be dependant on the timer being able to check those rollovers, so
 			it will need to be called often (maybe sysgraph needs a timer case check).
 	*/
-	for (size_t i = 0; i < MAX_NUM_TIMERS; i++) {
-		cyccnt_mark[i] = ARM_DWT_CYCCNT;
-		seconds[i] = 0.0;
-		minutes[i] = 0;
-		hours[i] = 0;
-	}
+	cyccnt_mark = ARM_DWT_CYCCNT;
 }
 
 
-void FTYK::set(int idx) {
+void FTYK::set() {
 	/*
 		  Set the timer at idx to the current cycle count.
 		@param:
 			idx: (int) index of the timer to set.
 	*/
-	cyccnt_mark[idx] = ARM_DWT_CYCCNT;
-	active_timers[idx] = 1;
-	seconds[idx] = 0.0;
-	minutes[idx] = 0;
-	hours[idx] = 0;
+	cyccnt_mark = ARM_DWT_CYCCNT;
 }
 
-void FTYK::mark(int idx) {
-	/*
-		  Print info about the timer at idx.
-		@param:
-			idx: (int) index of the timer to print info about.
-	*/
-	print(idx);
-}
+// void FTYK::mark(int idx) {
+// 	/*
+// 		  Print info about the timer at idx.
+// 		@param:
+// 			idx: (int) index of the timer to print info about.
+// 	*/
+// 	print(idx);
+// }
 
-void FTYK::accumulate_cycles(int idx, int cycles) {
-	seconds[idx] += CYCLES_2_S(cycles);
-
-	while (seconds[idx] >= 60) {
-		seconds[idx] -= 60.0;
-		minutes[idx] += 1;
-		if (minutes[idx] >= 60) {
-			minutes[idx] -= 60;
-			hours[idx] += 1;
-		}
-	}
-}
-
-void FTYK::cycles(int idx) {
+float FTYK::cycles() {
 	/*
 		  Get the number of cycles since last timer.set().
 		returns the cycle count as a float to avoid overflows.
@@ -79,121 +57,160 @@ void FTYK::cycles(int idx) {
 			cyccnt: (int) cyles since the timer was set
 	*/
 	int cyccnt = ARM_DWT_CYCCNT;
-	int cycdiff = cyccnt - cyccnt_mark[idx];
-	cyccnt_mark[idx] = cyccnt;
-	
+	float cycdiff = cyccnt - cyccnt_mark;
+
 	if (cycdiff < 0) {
 		cycdiff += MAX_CYCCNT;
 	}
 
-	accumulate_cycles(idx, cycdiff);
+	return cycdiff;// accumulator[idx] + (roll_over[idx] * MAX_CYCCNT);
 }
 
-float FTYK::nanos(int idx) {
+float FTYK::nanos() {
 	/*
 		  Get the number of nanoseconds since last timer.set().
 		@param:
 			idx: (int) index of the timer to get cycles from.
 	*/
-	cycles(idx);
-	return S_2_NS(seconds[idx]);
+	return CYCLES_2_NS(cycles());
 }
 
-float FTYK::micros(int idx) {
+float FTYK::micros() {
 	/*
 		  Get the number of microseconds since last timer.set().
 		@param:
 			idx: (int) index of the timer to get cycles from.
 	*/
-	cycles(idx);
-	return S_2_US(seconds[idx]);
+	return CYCLES_2_US(cycles());
 }
 
-float FTYK::millis(int idx) {
+float FTYK::millis() {
 	/*
 		  Get the number of milliseconds since last timer.set().
 		@param:
 			idx: (int) index of the timer to get cycles from.
 	*/
-	cycles(idx);
-	return S_2_MS(seconds[idx]);
+	return CYCLES_2_MS(cycles()); 
 }
 
-float FTYK::secs(int idx) {
+float FTYK::secs() {
 	/*
 		  Get the number of seconds since last timer.set().
 		@param:
 			idx: (int) index of the timer to get cycles from.
 	*/
-	cycles(idx);
-	return seconds[idx];
-}
-
-int FTYK::mins(int idx) {
-	return minutes[idx];
-}
-
-int FTYK::hrs(int idx) {
-	return hours[idx];
-}
-
-float FTYK::total_seconds(int idx) {
-	/*
-		  Get the number of seconds since last timer.set().
-		@param:
-			idx: (int) index of the timer to get cycles from.
-	*/
-	cycles(idx);
-	return seconds[idx] + (60 * (minutes[idx] + (60 * hours[idx])));
+	return CYCLES_2_S(cycles());
 }
 
 
-float FTYK::delay_micros(int idx, float duration){
+float FTYK::delay_micros(float duration){
 	/*
 	  Helper to pause for a duration. Duration starts
 	when set() is called, which must be called prior.
 	@param
 		duration: (uint32_t) microseconds to wait (from when set() was called)
 	*/
-	static int i = 0;
-	while(micros(idx) < duration) {
-		cycles(i);
-		i = (i + 1) % MAX_NUM_TIMERS;
-	}
+	while(micros() < duration) {}
 
-	return S_2_US(seconds[idx]);
+	return micros();
 }
 
-float FTYK::delay_millis(int idx, float duration){
+float FTYK::delay_millis(float duration){
 	/*
 	  Helper to pause for a duration. Duration starts
 	when set() is called, which must be called prior.
 	@param
 		duration: (uint32_t) milliseconds to wait (from when set() was called)
 	*/
-	static int i = 0;
-	while(millis(idx) < duration) {
-		cycles(i);
-		i = (i + 1) % MAX_NUM_TIMERS;
-	}
 	
-	return S_2_MS(seconds[idx]);
+	return US_2_MS(delay_micros(duration * 1E3));
 }
 
-void FTYK::print(int idx) {
-	cycles(idx);
-	printf("Timer %i\n", idx);
-	printf("%i:%i:%f\n", 
-		hours[idx],
-		minutes[idx],
-		seconds[idx]);
+void FTYK::print() {
+	cycles();
+	printf("Timer \t%0.3f|%0.3f|%0.3f|%0.3f (s/ms/us/ns)\n",
+		secs(),
+		millis(),
+		micros(),
+		nanos());
 }
 
-void FTYK::print(int idx, const char* title) {
-	cycles(idx);
-	printf(title); printf(" Timer %i\n", idx);
-	printf("%i:%i:%f\n", 
-		hours[idx],
-		minutes[idx],
-		seconds[idx]);
+void FTYK::print(const char* title) {
+	printf(title); 
+	print();
+}
+
+
+Timestamp::Timestamp() {
+	set();
+}
+
+void Timestamp::set() {
+	timer.set();
+	hours = 0;
+	minutes = 0;
+	seconds = 0;
+}
+
+void Timestamp::wrap() {
+	if (seconds >= 60) {
+		
+		minutes += int(seconds / 60);
+		seconds = fmod(seconds, 60);
+
+	}
+
+	if (minutes >= 60) {
+			
+		hours += int(minutes / 60);
+		minutes = minutes % 60;
+
+	}
+
+	if (hours >= 24) {
+
+		hours -= 24;
+	
+	}
+
+}
+
+void Timestamp::accumulate(float total_seconds) {
+	seconds += total_seconds;
+	wrap();
+}
+		
+void Timestamp::update() {
+
+	float timer_seconds = timer.secs();
+	timer.set();
+	accumulate(timer_seconds);
+}
+
+float Timestamp::secs() {
+	return seconds + timer.secs();
+}
+
+float Timestamp::total_seconds() {
+	update();
+	return timer.secs() + seconds + (60 * (minutes + (60 * hours)));
+}
+
+void Timestamp::sync(Timestamp ts) {
+	hours = ts.hours;
+	minutes = ts.minutes;
+	seconds = ts.seconds + ts.timer.secs();
+	wrap();
+}
+
+void Timestamp::sync(float total_seconds) {
+	hours = 0;
+	minutes = 0;
+	seconds = 0;
+	accumulate(total_seconds);
+}
+
+void Timestamp::print() {
+	printf("Timestamp:\t%i:%i:%0.3f (h/m/s)\n", hours, minutes, seconds + timer.secs());
+	// timer.print();
 }

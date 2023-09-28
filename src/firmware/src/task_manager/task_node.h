@@ -34,7 +34,7 @@ class TaskNode {
 		TaskNode(Task*, int, int, int*);
 
 		void latch(int);
-		bool is_latched();
+		int is_latched();
 
 		int n_inputs();
 		int input_id(int);

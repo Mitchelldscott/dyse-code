@@ -32,7 +32,7 @@ void TaskNode::latch(int value) {
 	latch_flag = value;
 }
 
-bool TaskNode::is_latched() {
+int TaskNode::is_latched() {
 	return latch_flag;
 }
 
@@ -80,7 +80,8 @@ bool TaskNode::is_linked() {
 		@return
 			status: (bool) if tasks is configured
 	*/
-	return inputs.size() == input_ids.size();
+
+	return (*task)[INPUT_DIMENSION] == input_buffer.size();
 }
 
 int TaskNode::n_links() {
@@ -108,6 +109,7 @@ void TaskNode::link_input(TaskNode* node, int idx) {
 	*/
 	if (idx == inputs.size()) {
 		inputs.push(node);
+		input_buffer[input_buffer.size() + (*(node->task))[OUTPUT_DIMENSION] - 1] = 0;
 	}
 }
 
@@ -121,7 +123,8 @@ void TaskNode::set_task(Task* new_task, int rate) {
 	*/
 	millis_rate = rate;
 	task = new_task;
-	input_buffer.reset((*task)[INPUT_DIMENSION]);
+	input_buffer.reset(0);
+
 	output_buffer.reset((*task)[OUTPUT_DIMENSION]);
 	reset_config();
 }
@@ -157,7 +160,6 @@ void TaskNode::collect_inputs() {
 		input_buffer.insert((*inputs[i])[OUTPUT_DIMENSION]->as_array(), curr_size, (*inputs[i])[OUTPUT_DIMENSION]->size());
 		curr_size += (*inputs[i])[OUTPUT_DIMENSION]->size();
 	}
-
 }
 
 bool TaskNode::run_task(float timer) {
@@ -170,18 +172,24 @@ bool TaskNode::run_task(float timer) {
 		@return
 			status: (bool) if run was called.
 	*/
-	float duration = (timer - timestamp);
-	// printf("Duration, %f %f\n", duration, timer);
-	if (is_configured() && is_linked() && int(duration * 1000) >= millis_rate) {
+	int millis_total = int(timer * 1E3);
+	int duration = millis_total - timestamp;
+	
+	if (duration < 0) {
+		timestamp = millis_total;
+		return false;
+	}
+
+	if (is_configured() && is_linked() && duration >= millis_rate) {
 		if (latch_flag == 0) {
 			collect_inputs();
-			task->run(&input_buffer, &output_buffer, duration);
+			task->run(&input_buffer, &output_buffer, duration * 1E-3);
 		}
 		else if (latch_flag == 2) {
-			task->run(&input_buffer, &output_buffer, duration);
+			task->run(&input_buffer, &output_buffer, duration * 1E-3);
 		}
 
-		timestamp = timer;
+		timestamp = millis_total;
 		return true;
 	}
 

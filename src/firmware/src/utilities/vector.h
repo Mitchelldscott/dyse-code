@@ -219,7 +219,7 @@ template <typename T> class Vector {
 			*/
 			make_even_fit(index + n);
 			memcpy(&buffer[index], data, n * sizeof(T));
-			items = index + n;
+			items = max(items, index + n);
 		}
 
 		void insert(Vector<T> data, int index) {
@@ -234,7 +234,7 @@ template <typename T> class Vector {
 			int n = data.size();
 			make_even_fit(index + n);
 			memcpy(&buffer[index], data.as_array(), n * sizeof(T));
-			items = index + n;
+			items = max(items, index + n);
 		}
 
 		///// accessors /////

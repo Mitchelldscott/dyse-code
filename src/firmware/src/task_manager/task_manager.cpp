@@ -13,7 +13,10 @@
 
 #include "task_manager/task_manager.h"
 
-FTYK sys_timers;
+FTYK task_timer;
+FTYK debug_timer;
+Timestamp sys_time;
+
 float sys_lifetime = 0;
 
 int run_status = 0;
@@ -24,12 +27,16 @@ Vector<TaskNode*> nodes(0);
 CommsPipeline* pipeline_internal;
 
 CommsPipeline* init_task_manager() {
-	sys_timers.set(0);		// setup master cycle timer
-	sys_timers.set(1);		// setup individual run timer
-	sys_timers.set(2);		// status led control rate
+	sys_time.set();			// setup master system timer
+	task_timer.set();		// setup individual run timer
+	debug_timer.set();		// status led control rate
 
 	pinMode(RUN_STATUS_PIN, OUTPUT);
 	pinMode(CONFIGURATION_STATUS_PIN, OUTPUT);
+
+	debug_timer.delay_millis(250);
+	update_system_indicator();
+
 
 	pipeline_internal = enable_hid_interrupts();
 	return pipeline_internal;
@@ -43,7 +50,7 @@ bool link_nodes(int index) {
 	for (int i = nodes[index]->n_links(); i < nodes[index]->n_inputs(); i++) {
 		int node_idx = node_index(nodes[index]->input_id(i));
 		if (node_idx >= 0) {
-			printf("Linking node %i %i %i\n", index, node_idx, i);
+			// printf("Linking nodes %i(%i) to %i\n", index, i, node_idx);
 			nodes[index]->link_input(nodes[node_idx], i);
 		}
 		else {
@@ -55,7 +62,7 @@ bool link_nodes(int index) {
 
 void add_task(TaskSetupPacket* task_init) {
 	int index = node_index(task_init->task_id);
-	printf("Adding %i %i %c%c%c\n", task_init->task_id, task_init->rate, task_init->key[0], task_init->key[1], task_init->key[2]);
+	// printf("Adding id: %i rate: %i driver: %c%c%c\n", task_init->task_id, task_init->rate, task_init->key[0], task_init->key[1], task_init->key[2]);
 
 	if (index == -1) {	// Node does not exist yet
 		// Add new node, node id
@@ -105,7 +112,7 @@ void update_task(TaskSetupPacket* task_params) {
 
 
 	int config = nodes[node_idx]->setup_task();
-	printf("Configure node %i %i %i %i\n", node_idx, task_params->chunk_id * task_params->chunk_size, task_params->chunk_size, config);
+	// printf("Configure node: %i insert index: %i  insert size: %i config: %i\n", node_idx, task_params->chunk_id * task_params->chunk_size, task_params->chunk_size, config);
 
 	if (!config) {
 		printf("failed config: %i\n", (*nodes[node_idx])[PARAM_DIMENSION]->size());
@@ -181,49 +188,18 @@ void task_setup_handler() {
 }
 
 void task_publish_handler(int i) {
-	// TaskFeedback* task_fb = new TaskFeedback;
-	// task_fb->task_id = node_ids[i];
-	// task_fb->latch = nodes[i]->is_latched();
-	// task_fb->timestamp = sys_timers.millis(1);
-	// task_fb->output.from_array((*nodes[i])[OUTPUT_DIMENSION]->as_array(), (*nodes[i])[OUTPUT_DIMENSION]->size());
-
 	noInterrupts();
 	pipeline_internal->feedback[i]->update += 1;
 	pipeline_internal->feedback[i]->latch = nodes[i]->is_latched();
-	pipeline_internal->feedback[i]->timestamp = sys_timers.millis(1);
+	pipeline_internal->feedback[i]->timestamp = task_timer.millis();
 	pipeline_internal->feedback[i]->output.from_array((*nodes[i])[OUTPUT_DIMENSION]->as_array(), (*nodes[i])[OUTPUT_DIMENSION]->size());
 	interrupts();
 }
 
-void spin() {
-	// handle queued setup
-	task_setup_handler();
-
-	// handle task execution
-	for (int i = 0; i < nodes.size(); i++) {
-		// If task isn't fully linked to inputs this will link them (if the input tasks exist)
-		if (link_nodes(i)) {
-			// printf("Linked: %i\tconfigured %i\tinputs %i\tlinks %i\n", i, nodes[i]->is_configured(), nodes[i]->n_inputs(), nodes[i]->n_links());
-			// pulls outputs from input tasks and runs the current task
-			sys_timers.set(1);
-			if (nodes[i]->run_task(sys_timers.total_seconds(0))){
-				// printf("Ran: %i %i %f\n", i, nodes[i]->is_latched(), sys_timers.total_seconds(0));
-				// put task output, context in the pipeline for publishing
-				task_publish_handler(i);
-				run_status = 1;
-			}
-		}
-		else {
-			printf("Linking error %i\n", i);
-		}
-
-		noInterrupts();
-		pipeline_internal->lifetime = sys_timers.total_seconds(0); // update lifetime everytime a task is run
-		interrupts();
-	}
-
-	if (sys_timers.secs(2) > 0.25) {
-		sys_timers.set(2);
+void update_system_indicator() {
+	if (debug_timer.millis() > 250) {
+		// sys_time.print();
+		debug_timer.set();
 
 		if (nodes.size() == 0) {
 			config_status = !config_status;
@@ -231,13 +207,57 @@ void spin() {
 		else {
 			config_status = 0;
 			for (int i = 0; i < nodes.size(); i++) {
-				config_status |= !(nodes[i]->is_configured() && nodes[i]->is_linked());
+				if (!(nodes[i]->is_configured() && nodes[i]->is_linked()) && nodes[i]->is_latched() == 0) {
+					printf("Node Configuration issue: node: %i configured: %i linked: %i latch: %i\n", i, nodes[i]->is_configured(), nodes[i]->is_linked(), nodes[i]->is_latched());
+					config_status = 1;
+				}
 			}
 		}
 
 		digitalWriteFast(RUN_STATUS_PIN, run_status);
 		digitalWriteFast(CONFIGURATION_STATUS_PIN, config_status);
 	}
+}
+
+void spin() {
+
+	FTYK timer;
+	
+	// handle queued setup
+	task_setup_handler();
+
+	// sys_time.update();
+
+	// handle task execution
+	for (int i = 0; i < nodes.size(); i++) {
+
+		// If task isn't fully linked to inputs this will link them (if the input tasks exist)
+		if (link_nodes(i)) {
+			// printf("Linked: %i\tconfigured %i\tinputs %i\tlinks %i\n", i, nodes[i]->is_configured(), nodes[i]->n_inputs(), nodes[i]->n_links());
+			// pulls outputs from input tasks and runs the current task
+			task_timer.set();
+			if (nodes[i]->run_task(sys_time.secs())){
+				// printf("Ran: node: %i latch: %i systime: %f\n", i, nodes[i]->is_latched(), sys_timers.total_seconds(0));
+				// put task output, context in the pipeline for publishing
+				task_publish_handler(i);
+				run_status = 1;
+			}
+
+		}
+
+		else {
+			printf("Linking error %i\n", i);
+		}
+
+		noInterrupts();
+		pipeline_internal->timestamp.sync(sys_time); 
+		interrupts();
+
+	}
+
+	update_system_indicator();
+	sys_time.update();
+
 }
 
 void dump_all_tasks() {

@@ -20,10 +20,11 @@
 #define MASTER_CYCLE_TIME_US 	(MASTER_CYCLE_TIME_MS * 1E3)
 #define MASTER_CYCLE_TIME_ERR 	(MASTER_CYCLE_TIME_MS + 1)
 
-#define TEST_DURATION_S 		240
+#define TEST_DURATION_S 		120
 #define NUM_TEST_LOOPS			int(TEST_DURATION_S / MASTER_CYCLE_TIME_S)
 
-FTYK timers;
+FTYK timer;
+Timestamp timestamp;
 
 // Runs once
 int main() {
@@ -37,7 +38,7 @@ int main() {
 	for(int i = 0; i < 10; i++) {
 		int clk1 = ARM_DWT_CYCCNT;
 		int clk2 = ARM_DWT_CYCCNT;
-		errors += assert_geq<float>(clk2, clk1, "ARM_DWT_CYCCNT test 1v2"); // always fails, needed so 2v3 doesnt
+		errors += assert_geq<float>(clk2, clk1, "ARM_DWT_CYCCNT test 1v2"); 
 		int clk3 = ARM_DWT_CYCCNT;
 		errors += assert_gt<float>(clk3, clk2, "ARM_DWT_CYCCNT test 2v3");
 		int clk4 = ARM_DWT_CYCCNT;
@@ -49,24 +50,26 @@ int main() {
 	int loop_count = 0;
 	float prev_lifetime = 0;
 
-	timers.set(0);
-	timers.set(1);
+	timer.set();
+	timestamp.set();
 	int t = micros();
 	while (loop_count < NUM_TEST_LOOPS) {
 
 		errors += assert_geq<float>(lifetime, prev_lifetime, "Lifetime value not increasing");
 
 		if (loop_count % int(0.1 * NUM_TEST_LOOPS) == 0) {
-			timers.print(0, "\nFull");
-			timers.print(1, "Loop");
+			timer.print("Loop");
+			timestamp.print();
 			printf("Loops: %i\n", loop_count);
 			printf("Lifetime: %f\n", lifetime);
 		}
 
+		timestamp.update();
+
 		loop_count += 1;
 		prev_lifetime = lifetime;
-		lifetime += MS_2_S(timers.delay_millis(1, MASTER_CYCLE_TIME_MS));
-		timers.set(1);
+		lifetime += MS_2_S(timer.delay_millis(MASTER_CYCLE_TIME_MS));
+		timer.set();
 	}
 
 	int t1 = micros();
@@ -74,10 +77,9 @@ int main() {
 	printf("\n");
 	errors += assert_eq<float>(lifetime, TEST_DURATION_S, 1E-3, "Lifetime != expected");
 	errors += assert_eq<float>(lifetime, float(t1 - t) * 1E-6, 1E-6, "Lifetime != micros");
-	errors += assert_eq<float>(lifetime, timers.secs(0) + (60.0 * timers.mins(0)), 1E-6, "Lifetime != timer0");
+	errors += assert_eq<float>(lifetime, timestamp.total_seconds(), 1E-6, "Lifetime != timestamp");
 
-	timers.print(0, "\nFull");
-	timers.print(1, "Loop");
+	timer.print("Loop");
 	printf("Loops: %i\n", loop_count);
 	printf("Lifetime: %f\n", lifetime);
 

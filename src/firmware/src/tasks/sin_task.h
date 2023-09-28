@@ -1,7 +1,6 @@
 #ifndef SIN_DRIVER_H
 #define SIN_DRIVER_H
 
-#include "utilities/timing.h"
 #include "task_manager/task.h"
 
 
@@ -12,7 +11,6 @@ class SinTask: public Task {
 		float amplitude;
 		float shift;
 		float counter;
-		FTYK timers;
 
 
 	public:
@@ -22,6 +20,8 @@ class SinTask: public Task {
 			dimensions[PARAM_DIMENSION] = 3;
 			dimensions[OUTPUT_DIMENSION] = 1;
 
+			counter = 0;
+			
 			reset();
 		}
 
@@ -29,7 +29,6 @@ class SinTask: public Task {
 			frequency = (*config)[0];
 			amplitude = (*config)[1];
 			shift = (*config)[2];
-			timers.set(0);
 			// print();
 			// analogWriteResolution(12);
 		}
@@ -38,17 +37,16 @@ class SinTask: public Task {
 			frequency = 0;
 			amplitude = 0;
 			shift = 0;
-			timers.set(0);
 		}
 
 		void clear() {
 			frequency = 0;
 			amplitude = 0;
 			shift = 0;
-			timers.set(0);
 		}
 
 		void run(Vector<float>* inputs, Vector<float>* outputs, float dt) {
+			// printf("dt: %f + %f\n", counter, dt);
 			counter += dt;
 			(*outputs)[0] = (amplitude * sin(frequency * counter)) + shift;
 		}

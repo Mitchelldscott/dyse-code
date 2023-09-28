@@ -47,9 +47,8 @@ struct TaskFeedback {
 };
 
 struct CommsPipeline {
-	float lifetime;
-	int minutes;
-	int hours;
+	Timestamp timestamp;
+	Timestamp pc_timestamp;
 
 	Vector<TaskFeedback*> feedback;
 	Vector<TaskSetupPacket*> setup_queue;

@@ -22,7 +22,7 @@ float pc_write_count = 0;
 float mcu_read_count = 0;
 float mcu_write_count = 0;
 
-FTYK hid_timers;
+FTYK hid_watch_dog;
 ByteBuffer<64> buffer;
 IntervalTimer hid_interval_timer;
 
@@ -31,17 +31,17 @@ CommsPipeline pipeline;
 void push_hid() {
 
 	if(!usb_rawhid_available()) {
-		// printf("RawHID not available %f\n", hid_timers.secs(1));
-		if (hid_timers.secs(0) > 5) { // reset stats when no connection
+		// printf("RawHID not available %f\n", hid_watch_dogs.secs(1));
+		if (hid_watch_dog.secs() > 5) { // reset stats when no connection
 			reset_hid_stats();
-			hid_timers.set(0);
+			hid_watch_dog.set();
 		}
 		// printf("USB not available\n");
 		// clear_feedback_pipeline();
 		return;
 	}
 
-	hid_timers.set(0);
+	hid_watch_dog.set();
 
 	switch (usb_rawhid_recv(buffer.buffer(), 0)) {
 		case 64:
@@ -149,8 +149,7 @@ void send_hid_feedback() {
 }
 
 void send_hid_with_timestamp() {
-	pc_lifetime = buffer.get<float>(60);
-	buffer.put<float>(60, pipeline.lifetime);
+	buffer.put<float>(60, pipeline.timestamp.total_seconds());
 	if (usb_rawhid_send(buffer.buffer(), 0) > 0) {
 		mcu_write_count += 1;
 	}
@@ -227,7 +226,7 @@ void reset_hid_stats() {
 	pc_lifetime = 0;
 	hid_errors = 0;
 
-	pipeline.lifetime = 0;
+	pipeline.timestamp.set();
 	// clear_feedback_pipeline();
 }
 

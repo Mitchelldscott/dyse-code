@@ -112,7 +112,7 @@ COMPILER_PATH=$(abspath $(ARDUINO_PATH)/packages/teensy/tools/teensy-compile/11.
 #************************************************************************
 
 # CPP_FLAGS = compiler options for C and C++
-CPP_FLAGS=-Wall -g -O2 $(CPU_OPTIONS) -MMD $(OPTIONS) -Isrc -Iexamples -I$(CORE_DIR) -ffunction-sections -fdata-sections
+CPP_FLAGS=-Wall -g -O3 $(CPU_OPTIONS) -MMD $(OPTIONS) -Isrc -Iexamples -I$(CORE_DIR) -ffunction-sections -fdata-sections
 
 # compiler options for C++ only
 CXX_FLAGS=-std=gnu++14 -felide-constructors -fno-exceptions -fpermissive -fno-rtti -Wno-error=narrowing

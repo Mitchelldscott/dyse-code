@@ -38,7 +38,7 @@ use more_asserts::assert_le;
 
 #[allow(dead_code)]
 const VERBOSITY: usize = 1;
-pub static TEST_DURATION: u64 = 10;
+pub static TEST_DURATION: u64 = 60;
 
 #[cfg(test)]
 pub mod robot_fw {
@@ -259,7 +259,8 @@ pub mod live_comms {
         println!("[HID-Control]: shutdown");
         interface.layer.print();
 
-        let mut failed = false;
+        let mut status = vec![false; interface.robot_fw.tasks.len()];
+        let mut received_output = vec![false; interface.robot_fw.tasks.len()];
         (0..interface.robot_fw.tasks.len()).for_each(|i| {
             let rate_duration =
                 interface.robot_fw.tasks[i].rate as f64 * (TEST_DURATION as f64 * 0.8);
@@ -272,22 +273,29 @@ pub mod live_comms {
                 true => {}
                 false => {
                     interface.robot_fw.tasks[i].print();
-                    failed = true;
+                    received_output[i] = true;
                 }
             };
 
             match interface.robot_fw.configured[i] {
                 true => {}
                 false => {
-                    failed = true;
+                    status[i] = true;
                 }
             };
         });
 
-        match failed {
-            true => assert_eq!(0, 1, "Failed to configure task(s)"),
-            false => {}
-        };
+        status
+            .iter()
+            .enumerate()
+            .for_each(|(i, status)| assert_eq!(*status, false, "Failed to configure task {}", i));
+        received_output.iter().enumerate().for_each(|(i, status)| {
+            assert_eq!(
+                *status, false,
+                "Didn't receive enough output from task {}",
+                i
+            )
+        });
     }
 
     #[test]

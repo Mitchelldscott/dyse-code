@@ -89,7 +89,7 @@ impl BuffYamlUtil {
 
     pub fn robot(name: &str, yaml_name: &str) -> BuffYamlUtil {
         let project_root = env::var("PROJECT_ROOT").expect("Project root not set");
-        let yaml_path = format!("{}/dysepy/data/robots/{}", project_root, name);
+        let yaml_path = format!("{project_root}/dysepy/data/robots/{name}");
 
         let data_string = BuffYamlUtil::read_yaml_as_string(
             format!("{}/{}.yaml", yaml_path, yaml_name,).as_str(),
@@ -104,7 +104,7 @@ impl BuffYamlUtil {
     pub fn from_self(yaml_name: &str) -> BuffYamlUtil {
         let project_root = env::var("PROJECT_ROOT").expect("Project root not set");
         BuffYamlUtil::robot(
-            fs::read_to_string(format!("{}/dysepy/data/robots/self.txt", project_root))
+            fs::read_to_string(format!("{project_root}/dysepy/data/robots/self.txt"))
                 .unwrap()
                 .as_str(),
             yaml_name,
@@ -203,8 +203,11 @@ pub struct CsvUtil {
 
 impl CsvUtil {
     pub fn make_run_directory(name: &str, run: u16) -> String {
-        let robot_name = env::var("ROBOT_NAME").expect("Robot name not set");
         let project_root = env::var("PROJECT_ROOT").expect("Project root not set");
+        let robot_name = match env::var("ROBOT_NAME") {
+            Ok(name) => name,
+            _ => fs::read_to_string(format!("{project_root}/dysepy/data/robots/self.txt")).unwrap(),
+        };
         let path = format!("{project_root}/data/{robot_name}/{name}/{run}");
         assert_path(&path::Path::new(&path));
         path
@@ -212,7 +215,7 @@ impl CsvUtil {
 
     pub fn make_path(name: &str, run: u16, file_count: u16) -> String {
         let ppath = CsvUtil::make_run_directory(name, run);
-        let path = format!("{}/{}.csv", ppath, file_count);
+        let path = format!("{ppath}/{file_count}.csv");
 
         assert_file(&path::Path::new(&path));
         path

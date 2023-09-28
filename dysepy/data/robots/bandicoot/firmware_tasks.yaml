@@ -1,6 +1,6 @@
 # lsm9ds1:
 #   driver: DS1
-#   rate: 100
+#   rate: 1000
 #   publish: 100
 
 # complimentary_filter:
@@ -12,29 +12,24 @@
 
 signal:
   driver: SIN
-  rate: 200
-  parameters: [10.0, 0.5, 0.5] # [frequency, amplitude, shift]
+  rate: 500
+  parameters: [5.0, 0.25, 0.4] # [frequency, amplitude, shift]
 
 pwm1:
   driver: PWM
-  rate: 200
+  rate: 500
   inputs: [signal]
   parameters: [8.0]
 
 pwm2:
   driver: PWM
-  rate: 200
+  rate: 500
   inputs: [signal]
   parameters: [6.0]
 
 pwm3:
   driver: PWM
-  rate: 200
+  rate: 500
   inputs: [signal]
   parameters: [7.0]
 
-pwm4:
-  driver: PWM
-  rate: 200
-  inputs: [signal]
-  parameters: [5.0]
