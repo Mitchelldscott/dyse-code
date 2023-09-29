@@ -1,0 +1,3 @@
+[submodule "src/firmware/libraries/Adafruit_LSM9DS1"]
+	path = src/firmware/libraries/Adafruit_LSM9DS1
+	url = git@github.com:Adafruit/Adafruit_LSM9DS1.git
