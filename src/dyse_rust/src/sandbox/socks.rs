@@ -10,7 +10,6 @@
  *
  *
  ********************************************************************************/
-
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::{
@@ -236,7 +235,7 @@ impl SockBuffer {
         idx += 1;
 
         (0..n_addrs)
-            .map(|_| { 
+            .map(|_| {
                 let i = idx;
                 idx += 6;
                 self.parse_addr(i)
@@ -375,6 +374,12 @@ impl Sockage {
         Sockage::new(name, sock_uri!(0, 0, 0, 0, 0), 1)
     }
 
+    pub fn Sender(name: &str) -> Sockage {
+        let sock = Sockage::new(name, sock_uri(0, 0, 0, 0, 0), 1);
+        sock.sender_connect();
+        sock
+    }
+
     pub fn clear_registry(&mut self) {
         self.socks.clear();
     }
@@ -435,17 +440,21 @@ impl Sockage {
     }
 
     pub fn register_addrs(&mut self, addrs: &Vec<SocketAddr>) -> bool {
-        let mut found_all = true;
-        addrs.iter().enumerate().for_each(|(i, addr)| {
-            if addr.port() > 0 {
-                self.socks[i].address = *addr;
+        match addrs.len() == self.names.len() {
+            true => {
+                return addrs.iter().enumerate().filter_map(|(i, addr)| {
+                    if addr.port() > 0 {
+                        self.socks[i].address = *addr;
+                        None
+                    }
+                    else {
+                        Some(i)
+                    }
+                }).len() == 0;
             }
-            else {
-                found_all = false;
-            }
-        });
 
-        found_all
+            false => return false,
+        }
     }
 
     pub fn discover_sock(&mut self, name: &str, addr: &SocketAddr) {
@@ -523,6 +532,44 @@ impl Sockage {
         }
     }
 
+    pub fn sender_connect(&self) {
+        let mut t = Instant::now();
+        while self.lifetime.elapsed().as_secs() < 1 {
+            let mut buffer = SockBuffer::new();
+
+            match t.elapsed().as_micros() >= self.micros_rate
+            {
+                true => {
+                    self.send_to(
+                        SockBuffer::data_packet(&self.name, &vec![]),
+                        sock_uri!(1313),
+                    );
+                    t = Instant::now();
+                },
+                _ => {},
+            };
+
+            let src = self.recv(&mut buffer.buffer);
+
+            match (src.port(), buffer.mode()) {
+                (0, _) => {},
+                (1313, 1) => {
+                    let (_, names) = buffer.parse_name_packet();
+                    self.register_names(&names);
+                    // self.log(format!("Received names {:?}", names));
+                }
+                (1313, 2) => {
+                    let (_, addrs) = buffer.parse_addr_packet();
+
+                    if self.register_addrs(&addrs) { // if addresses fails request new data
+                        break;
+                    }
+                    // sock.log(format!("Received addresses {:?}", addrs));
+                }
+            }
+        }
+    }
+
     pub fn is_shutdown(&self) -> bool {
         *self.shutdown.read().unwrap()
     }
@@ -559,64 +606,64 @@ impl Sockage {
         );
     }
 
-    pub fn thread(&self, ) {
-        let mut t = Instant::now();
-        while sock.lifetime.elapsed().as_secs() < 3 {
-            let mut buffer = SockBuffer::new();
+    // pub fn thread(&self, ) {
+    //     let mut t = Instant::now();
+    //     while sock.lifetime.elapsed().as_secs() < 3 {
+    //         let mut buffer = SockBuffer::new();
 
-            match rate > 0.0 && t.elapsed().as_micros() >= sock.micros_rate
-            {
-                true => {
-                    sock.data_broadcast(&vec![1.0, 2.0, 3.0, 4.0]);
-                    t = Instant::now();
-                },
-                _ => {},
-            };
+    //         match rate > 0.0 && t.elapsed().as_micros() >= sock.micros_rate
+    //         {
+    //             true => {
+    //                 sock.data_broadcast(&vec![1.0, 2.0, 3.0, 4.0]);
+    //                 t = Instant::now();
+    //             },
+    //             _ => {},
+    //         };
 
-            let src = sock.recv(&mut buffer.buffer);
+    //         let src = sock.recv(&mut buffer.buffer);
 
-            match (src.port(), buffer.mode()) {
-                (0, _) => {},
-                (1313, 0) => {
-                    // sock.log("Received stamp");
-                }
-                (1313, 1) => {
-                    let (_, names) = buffer.parse_name_packet();
-                    sock.register_names(&names);
-                    // sock.log(format!("Received names {:?}", names));
-                }
-                (1313, 2) => {
-                    let (_, addrs) = buffer.parse_addr_packet();
-                    
-                    if !sock.register_addrs(&addrs) { // if addresses fails request new data
-                        sock.send_to(
-                            SockBuffer::data_packet(&sock.name, &vec![]),
-                            sock_uri!(1313),
-                        );
-                    }
-                    // sock.log(format!("Received addresses {:?}", addrs));
-                }
-                (_, 4) => {
+    //         match (src.port(), buffer.mode()) {
+    //             (0, _) => {},
+    //             (1313, 0) => {
+    //                 // sock.log("Received stamp");
+    //             }
+    //             (1313, 1) => {
+    //                 let (_, names) = buffer.parse_name_packet();
+    //                 sock.register_names(&names);
+    //                 // sock.log(format!("Received names {:?}", names));
+    //             }
+    //             (1313, 2) => {
+    //                 let (_, addrs) = buffer.parse_addr_packet();
 
-                    let (sender, data) = buffer.parse_data_packet();
-                    // sock.log(format!("Received data from {} {:?}", sender, data));
-                }
-                _ => {},
-            }
-        }
-    }
+    //                 if !sock.register_addrs(&addrs) { // if addresses fails request new data
+    //                     sock.send_to(
+    //                         SockBuffer::data_packet(&sock.name, &vec![]),
+    //                         sock_uri!(1313),
+    //                     );
+    //                 }
+    //                 // sock.log(format!("Received addresses {:?}", addrs));
+    //             }
+    //             (_, 4) => {
+
+    //                 let (sender, data) = buffer.parse_data_packet();
+    //                 // sock.log(format!("Received data from {} {:?}", sender, data));
+    //             }
+    //             _ => {},
+    //         }
+    //     }
+    // }
 
     pub fn Receiver(name: String, rate: f64) {
         let millis = (1E6 / rate) as u128;
         let mut sock = Sockage::client(name);
 
         if rate > 0.0 {
-            sock.micros_rate = millis; 
+            sock.micros_rate = millis;
             sock.send_to(
                 SockBuffer::data_packet(&sock.name, &vec![]),
                 sock_uri!(1313),
-            );               
-        } 
+            );
+        }
         else {
             sock.micros_rate = 250;
         }
@@ -629,8 +676,6 @@ impl Sockage {
             mpsc::channel();
     }
 }
-
-
 
 // pub struct FullDuplexChannel {
 //     // Sopic or Sockic, idk
