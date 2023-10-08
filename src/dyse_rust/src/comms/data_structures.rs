@@ -508,10 +508,7 @@ pub struct RobotFirmware {
 }
 
 impl RobotFirmware {
-    pub fn from_byu(
-        byu: BuffYamlUtil,
-        writer_tx: crossbeam_channel::Sender<ByteBuffer>,
-    ) -> RobotFirmware {
+    pub fn from_byu(byu: BuffYamlUtil, _: crossbeam_channel::Sender<ByteBuffer>) -> RobotFirmware {
         let tasks: Vec<EmbeddedTask> = byu
             .data()
             .as_hash()
@@ -622,11 +619,11 @@ impl RobotFirmware {
 
         if rid == INIT_REPORT_ID {
             if mode == INIT_REPORT_ID {
-                // let prev_mcu_write_count = mcu_stats.packets_sent();
-                // let packet_diff = mcu_write_count - prev_mcu_write_count;
-                // if packet_diff > 1.0 {
-                //     println!("MCU Packet write difference: {}", packet_diff);
-                // }
+                let prev_mcu_write_count = mcu_stats.packets_sent();
+                let packet_diff = report.get_float(2) - prev_mcu_write_count;
+                if packet_diff > 1.0 {
+                    println!("MCU Packet write difference: {}", packet_diff);
+                }
 
                 mcu_stats.set_packets_sent(report.get_float(2));
                 mcu_stats.set_packets_read(report.get_float(6));
@@ -638,12 +635,12 @@ impl RobotFirmware {
             } else if report.get(3) < MAX_HID_FLOAT_DATA as u8 {
                 self.configured[mode as usize] = true;
 
-                self.tasks[mode as usize].update_output(
-                    report.get(2),
-                    report.get_floats(4, report.get(3) as usize),
-                    mcu_lifetime,
-                    report.get_float(56),
-                );
+                // self.tasks[mode as usize].update_output(
+                //     report.get(2),
+                //     report.get_floats(4, report.get(3) as usize),
+                //     mcu_lifetime,
+                //     report.get_float(56),
+                // );
             } else {
                 report.print();
             }

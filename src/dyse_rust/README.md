@@ -6,7 +6,4 @@ or
         cargo build --release && cargo fmt
 
 ### dysepy
-        dysepy -b rust-debug 
-or
-
-        dysepy -b rust-release
+        dysepy -b rust 
