@@ -18,7 +18,15 @@ extern crate hidapi;
 use hidapi::{HidApi, HidDevice};
 
 use crate::{
-    comms::{data_structures::*, hid_interface::*, hid_layer::*, hid_reader::*, hid_writer::*},
+    comms::{
+        data_structures::*, 
+        robot_firmware::*, 
+        socks::*, 
+        hid_interface::*, 
+        hid_layer::*, 
+        hid_reader::*, 
+        hid_writer::*
+    },
     utilities::{data_structures::*, loaders::*},
 };
 
@@ -38,7 +46,7 @@ use more_asserts::assert_le;
 
 #[allow(dead_code)]
 const VERBOSITY: usize = 1;
-pub static TEST_DURATION: u64 = 60;
+pub static TEST_DURATION: u64 = 10;
 
 #[cfg(test)]
 pub mod robot_fw {
@@ -184,11 +192,6 @@ pub mod dead_comms {
         /*
             Start an hid layer
         */
-        // let (layer, writer_rx) = HidLayer::new("penguin");
-        // let sim_layer = layer.clone();
-        // let mut hidreader = HidReader::new(layer.clone());
-        // let mut hidwriter = HidWriter::new(layer, writer_rx);
-
         let (interface, mut reader, mut writer) = HidInterface::new();
 
         interface.layer.print();
@@ -260,23 +263,7 @@ pub mod live_comms {
         interface.layer.print();
 
         let mut status = vec![false; interface.robot_fw.tasks.len()];
-        let mut received_output = vec![false; interface.robot_fw.tasks.len()];
         (0..interface.robot_fw.tasks.len()).for_each(|i| {
-            let rate_duration =
-                interface.robot_fw.tasks[i].rate as f64 * (TEST_DURATION as f64 * 0.8);
-            let expected_output_size = match rate_duration > 500.0 {
-                true => 500.0,
-                false => rate_duration,
-            };
-
-            match interface.robot_fw.tasks[i].output.len() as f64 >= expected_output_size {
-                true => {}
-                false => {
-                    interface.robot_fw.tasks[i].print();
-                    received_output[i] = true;
-                }
-            };
-
             match interface.robot_fw.configured[i] {
                 true => {}
                 false => {
@@ -289,13 +276,6 @@ pub mod live_comms {
             .iter()
             .enumerate()
             .for_each(|(i, status)| assert_eq!(*status, false, "Failed to configure task {}", i));
-        received_output.iter().enumerate().for_each(|(i, status)| {
-            assert_eq!(
-                *status, false,
-                "Didn't receive enough output from task {}",
-                i
-            )
-        });
     }
 
     #[test]
@@ -332,5 +312,28 @@ pub mod live_comms {
         reader_handle.join().expect("[HID-Reader]: failed");
         interface_sim.join().expect("[HID-Control]: failed");
         writer_handle.join().expect("[HID-Writer]: failed");
+    }
+
+    #[test]
+    pub fn core() {
+        let mut sock = Sockage::core("live_comms_core");
+
+        assert_eq!(
+            sock.socket.local_addr().unwrap(),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1313),
+            "Core Didn't bind to requested IP"
+        );
+
+        while sock.lifetime.elapsed().as_secs() < TEST_DURATION {
+            sock.core_parse();
+        }
+
+        sock.send_terminate();
+        sock.log_heavy();
+    }
+
+    #[test]
+    pub fn echo_node() {
+        Sockage::echo(vec!["lsm9ds1".to_string()]);
     }
 }

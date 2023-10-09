@@ -14,7 +14,7 @@
 extern crate hidapi;
 
 use crate::{
-    comms::{data_structures::*, hid_layer::*, hid_reader::*, hid_writer::*},
+    comms::{robot_firmware::*, hid_layer::*, hid_reader::*, hid_writer::*},
     utilities::data_structures::*,
 };
 use std::{sync::mpsc, time::Instant};
@@ -93,14 +93,6 @@ impl HidInterface {
 
     pub fn writer_tx(&self, report: ByteBuffer) {
         self.writer_tx.send(report).unwrap();
-    }
-
-    pub fn robot(&self) -> &RobotFirmware {
-        &self.robot_fw
-    }
-
-    pub fn output(&self, index: usize) -> &Vec<Vec<f64>> {
-        &self.robot_fw.tasks[index].output
     }
 
     pub fn check_feedback(&mut self) {

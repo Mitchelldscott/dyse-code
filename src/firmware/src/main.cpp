@@ -14,11 +14,6 @@
 #include "utilities/splash.h"
 #include "task_manager/task_manager.h"
 
-#define MASTER_CYCLE_TIME_MS 	0.5
-#define MASTER_CYCLE_TIME_S 	(MASTER_CYCLE_TIME_MS * 1E-3)
-#define MASTER_CYCLE_TIME_US 	(MASTER_CYCLE_TIME_MS * 1E3)
-#define MASTER_CYCLE_TIME_ERR 	(MASTER_CYCLE_TIME_MS + 0.01)
-
 
 // Runs once
 void setup() {

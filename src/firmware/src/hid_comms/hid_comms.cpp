@@ -126,26 +126,34 @@ void send_hid_feedback() {
 	static int task_num = 0;
 
 	for (int i = 0; i < pipeline.feedback.size(); i++) {
-		if (pipeline.feedback[task_num]->configured == 0) {
-			break;
-		}
-		if (pipeline.feedback[task_num]->update <= 0 || pipeline.feedback[task_num]->output.size() <= 0) {
+		if (pipeline.feedback[task_num]->configured == 0 || 
+			(pipeline.feedback[task_num]->update > 0 && 
+				pipeline.feedback[task_num]->output.size() > 0)) {
+			
+			pipeline.feedback[task_num]->update = 0;
+
+			buffer.put<byte>(0, 1);
+			buffer.put<byte>(1, pipeline.feedback[task_num]->task_id);
+			buffer.put<byte>(2, pipeline.feedback[task_num]->latch);
+			
+			dump_vector(&pipeline.feedback[task_num]->output);
+			
+			buffer.put<float>(56, pipeline.feedback[task_num]->timestamp);
+			
 			task_num = (task_num + 1) % pipeline.feedback.size();
+			
+			send_hid_with_timestamp();
+			
+			return;
 		}
 		else {
-			pipeline.feedback[task_num]->update = 0;
-			break;
+			task_num = (task_num + 1) % pipeline.feedback.size();
 		}
 	}
 
+	send_hid_status();
+
 	// printf("pipeline feedback: %p %i\n", pipeline.feedback[task_num], pipeline.feedback[task_num]->task_id);
-	buffer.put<byte>(0, 1);
-	buffer.put<byte>(1, pipeline.feedback[task_num]->task_id);
-	buffer.put<byte>(2, pipeline.feedback[task_num]->latch);
-	dump_vector(&pipeline.feedback[task_num]->output);
-	buffer.put<float>(56, pipeline.feedback[task_num]->timestamp);
-	task_num = (task_num + 1) % pipeline.feedback.size();
-	send_hid_with_timestamp();
 }
 
 void send_hid_with_timestamp() {

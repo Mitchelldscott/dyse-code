@@ -12,7 +12,7 @@
  ********************************************************************************/
 #![allow(unused_imports)]
 #![allow(unused_macros)]
-use crate::sandbox::socks::*;
+use crate::comms::socks::*;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
@@ -454,7 +454,8 @@ pub mod mid_socks {
                 (1313, 2) => {
                     let (_, addrs) = buffer.parse_addr_packet();
 
-                    if !sock.register_addrs(&addrs) {
+                    sock.register_addrs(&addrs);
+                    if !sock.targets_configured {
                         // if addresses fails request new data
                         sock.send_to(
                             SockBuffer::data_packet(&sock.name, &vec![]),
@@ -558,26 +559,28 @@ pub mod high_socks {
         let mut v = 0.0;
 
         while sock.lifetime.elapsed().as_secs() < 3 {
-            sock.data_broadcast(&vec![v, v, v, v, v]);
+            sock.send(vec![v, v, v, v, v]);
             v = v + 1.0;
             while t.elapsed().as_micros() <= sock.micros_rate {}
             t = Instant::now();
         }
+
+        assert_eq!(sock.targets_configured, true, "Failed to configure targets");
+        sock.log_heavy();
     }
 
     #[test]
     pub fn node2() {
         let names = vec!["sock_node1".to_string()];
-        let mut sock = Sockage::full("sock_node2", names.clone());
 
-        pub fn callback(sock: &mut Sockage, names: &Vec<String>, data: &Vec<Vec<f64>>) {
-            data.iter().for_each(|x| {
-                sock.data_broadcast(x);
-                // assert_eq!(*x, vec![1.0, 2.0, 3.0, 4.0], "Received incorrect data")
-            });
+        pub fn callback(sock: &mut Sockage, _: &Vec<String>) {
+            let data = sock.data[0].iter().map(|x| -x).collect();
+            sock.data_broadcast(&data);
         }
 
-        sock.receiver_spin(names, &callback);
+        let handle = Sockage::thread("sock_node2".to_string(), names, &callback);
+
+        handle.join().expect("sock_node2 thread failed");
     }
 
     #[test]
