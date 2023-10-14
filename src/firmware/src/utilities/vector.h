@@ -313,7 +313,7 @@ template <typename T> class Vector {
 					when index is invalid 
 			*/
 			if (index < 0) {
-				index = max(0, length + index);
+				index = max(0, items + index);
 			}
 
 			items = max(items, index+1);

@@ -11,7 +11,10 @@
  *
  ********************************************************************************/
 
-use crate::{comms::{socks::*, data_structures::*}, utilities::{data_structures::*, loaders::*}};
+use crate::{
+    comms::{data_structures::*, socks::*},
+    utilities::{data_structures::*, loaders::*},
+};
 use std::time::Instant;
 /// helpful constants to use
 pub static P: u8 = 0x50;
@@ -54,10 +57,10 @@ pub static SETUP_CONFIG_MODE: u8 = 2;
 /// '''
 pub static OUTPUT_MODE: u8 = 2;
 
-pub fn get_task_reset_packet(id: u8, rate: u16, driver: Vec<u8>, input_ids: Vec<u8>) -> ByteBuffer {
+pub fn get_task_reset_packet(id: u8, rate: f64, driver: Vec<u8>, input_ids: Vec<u8>) -> ByteBuffer {
     let mut buffer = ByteBuffer::hid();
     buffer.puts(0, vec![INIT_REPORT_ID, INIT_NODE_MODE, id]);
-    buffer.puts(3, (1000 / rate).to_le_bytes().to_vec());
+    buffer.puts(3, ((1E6 / rate) as u16).to_le_bytes().to_vec());
     buffer.puts(5, driver);
     buffer.put(10, input_ids.len() as u8);
     buffer.puts(11, input_ids);
@@ -97,7 +100,7 @@ pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<ByteBuff
 
 pub fn get_task_initializers(
     id: u8,
-    rate: u16,
+    rate: f64,
     driver: Vec<u8>,
     parameters: &Vec<f64>,
     input_ids: Vec<u8>,
@@ -128,7 +131,7 @@ pub fn input_latch(i: u8, data: Vec<f64>) -> ByteBuffer {
 }
 
 pub struct EmbeddedTask {
-	pub rate: u16,
+    pub rate: f64,
     pub latch: u16,
 
     pub name: String,
@@ -149,11 +152,10 @@ impl EmbeddedTask {
     pub fn named(
         name: String,
         driver: String,
-        rate: u16,
+        rate: f64,
         input_names: Vec<String>,
         params: Vec<f64>,
     ) -> EmbeddedTask {
-
         EmbeddedTask {
             rate: rate,
             latch: 0,
@@ -201,19 +203,16 @@ impl EmbeddedTask {
         self.timestamp = timestamp;
         // if self.lifetime.elapsed().as_millis() as f64 > 780.0 / self.rate as f64 {
         self.sock.send(data);
-            // self.lifetime = Instant::now();
+        // self.lifetime = Instant::now();
         // }
     }
 
     pub fn print(&self) {
-        println!(
-            "{:?}: {:?}",
-            self.name, self.driver
-            );
+        println!("{:?}: {:?}", self.name, self.driver);
         println!(
             "\tRate: {}Hz\n\tRuntime: {}ms\n\tTimestamp: {}s",
             self.rate, self.run_time, self.timestamp
-            );
+        );
         println!("\tparameters:\n\t\t{:?}", self.parameters);
     }
 }
@@ -247,7 +246,10 @@ pub struct RobotFirmware {
 }
 
 impl RobotFirmware {
-    pub fn from_byu(byu: BuffYamlUtil, writer_tx: crossbeam_channel::Sender<ByteBuffer>) -> RobotFirmware {
+    pub fn from_byu(
+        byu: BuffYamlUtil,
+        writer_tx: crossbeam_channel::Sender<ByteBuffer>,
+    ) -> RobotFirmware {
         let tasks: Vec<EmbeddedTask> = byu
             .data()
             .as_hash()
@@ -257,7 +259,7 @@ impl RobotFirmware {
                 EmbeddedTask::named(
                     key.as_str().unwrap().to_string(),
                     byu.parse_str("driver", data).unwrap_or("NUL".to_string()),
-                    byu.parse_int("rate", data).unwrap_or(-1) as u16,
+                    byu.parse_float("rate", data).unwrap_or(-1.0),
                     byu.parse_strs("inputs", data).unwrap_or(vec![]),
                     byu.parse_floats("parameters", data).unwrap_or(vec![]),
                 )
@@ -366,14 +368,19 @@ impl RobotFirmware {
                 mcu_stats.set_packets_read(report.get_float(6));
             }
         } else if rid == TASK_CONTROL_ID && self.tasks.len() > mode as usize {
-            // Zero length output packet means not configured 
+            // Zero length output packet means not configured
             // (only sends when task_node.is_configured() == false)
             if report.get(3) == 0 {
                 self.configured[mode as usize] = false;
             } else if report.get(3) < MAX_HID_FLOAT_DATA as u8 {
                 self.configured[mode as usize] = true;
 
-                self.tasks[mode as usize].broadcast(report.get(2) as u16, report.get_float(56), mcu_lifetime, report.get_floats(4, report.get(3) as usize));
+                self.tasks[mode as usize].broadcast(
+                    report.get(2) as u16,
+                    report.get_float(56),
+                    mcu_lifetime,
+                    report.get_floats(4, report.get(3) as usize),
+                );
                 // self.tasks[mode as usize].update_output(
                 //     report.get(2),
                 //     report.get_floats(4, report.get(3) as usize),
@@ -396,5 +403,4 @@ impl RobotFirmware {
             task.print();
         });
     }
-    
 }

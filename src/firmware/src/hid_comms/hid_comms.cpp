@@ -75,6 +75,7 @@ void push_hid() {
 					printf("kill switch received\n");
 					send_hid_status();
 					reset_hid_stats();
+					nuclear_option();
 					return;
 
 				default:
@@ -126,9 +127,12 @@ void send_hid_feedback() {
 	static int task_num = 0;
 
 	for (int i = 0; i < pipeline.feedback.size(); i++) {
-		if (pipeline.feedback[task_num]->configured == 0 || 
-			(pipeline.feedback[task_num]->update > 0 && 
-				pipeline.feedback[task_num]->output.size() > 0)) {
+		if (pipeline.feedback[task_num]->update > 0) {
+
+			// if (task_num == 0) {
+			// 	printf("update: %i config: %i\n", pipeline.feedback[task_num]->update, pipeline.feedback[task_num]->configured);
+			// 	pipeline.timestamp.print();
+			// }
 			
 			pipeline.feedback[task_num]->update = 0;
 
@@ -139,10 +143,10 @@ void send_hid_feedback() {
 			dump_vector(&pipeline.feedback[task_num]->output);
 			
 			buffer.put<float>(56, pipeline.feedback[task_num]->timestamp);
+						
+			send_hid_with_timestamp();
 			
 			task_num = (task_num + 1) % pipeline.feedback.size();
-			
-			send_hid_with_timestamp();
 			
 			return;
 		}
@@ -223,6 +227,12 @@ void overwrite_task_hid() {
 	}
 
 	// push config packet to setup queue
+	pipeline.setup_queue.push(task);
+}
+
+void nuclear_option() {
+	TaskSetupPacket* task = new TaskSetupPacket;
+	task->packet_type = 13;
 	pipeline.setup_queue.push(task);
 }
 

@@ -312,7 +312,6 @@ impl Sock {
             name: name.to_string(),
             address: address,
             targets: targets,
-
         }
     }
 
@@ -329,6 +328,7 @@ pub fn empty_cb(_: &mut Sockage, _: &Vec<String>) {}
 pub struct Sockage {
     pub name: String,
     pub lifetime: Instant,
+    pub attention: Instant,
     pub micros_rate: u128,
     pub send_count: u128,
     pub recv_count: u128,
@@ -350,12 +350,13 @@ impl Sockage {
         Sockage {
             name: name.to_string(),
             lifetime: Instant::now(),
+            attention: Instant::now(),
             micros_rate: rate,
             send_count: 0,
             recv_count: 0,
 
             targets_configured: false,
-            
+
             data: vec![],
             timestamp: vec![],
 
@@ -407,6 +408,14 @@ impl Sockage {
         sock.timestamp = vec![0.0; names.len()];
         sock.data_request(names);
         sock
+    }
+
+    pub fn is_shutdown(&self) -> bool {
+        *self.shutdown.read().unwrap()
+    }
+
+    pub fn shutdown(&self, status: bool) {
+        *self.shutdown.write().unwrap() = status;
     }
 
     pub fn clear_registry(&mut self) {
@@ -472,16 +481,13 @@ impl Sockage {
         match addrs.len() == self.socks.len() {
             true => {
                 self.targets_configured = true;
-                addrs
-                    .iter()
-                    .enumerate()
-                    .for_each(|(i, addr)| {
-                        if addr.port() > 0 {
-                            self.socks[i].address = *addr;
-                        } else {
-                            self.targets_configured = false;
-                        }
-                    });
+                addrs.iter().enumerate().for_each(|(i, addr)| {
+                    if addr.port() > 0 {
+                        self.socks[i].address = *addr;
+                    } else {
+                        self.targets_configured = false;
+                    }
+                });
             }
 
             false => self.targets_configured = false,
@@ -537,10 +543,12 @@ impl Sockage {
 
         (0..self.socks.len()).for_each(|i| {
             match self.socks[i].address.port() > 0 {
-                true => { self.send_to(data_packet, self.socks[i].address); }
-                _ => {},
+                true => {
+                    // self.log(self.socks[i].name.clone());
+                    self.send_to(data_packet, self.socks[i].address);
+                }
+                _ => {}
             };
-            
         });
     }
 
@@ -555,6 +563,20 @@ impl Sockage {
             },
 
             false => false,
+        }
+    }
+
+    pub fn peek(&mut self) -> SocketAddr {
+        match !self.is_shutdown() {
+            true => {
+                let mut buffer = [0; 10];
+                match self.socket.peek_from(&mut buffer) {
+                    Ok((_size, src_addr)) => src_addr,
+
+                    Err(_) => sock_uri!(0, 0, 0, 0, 0),
+                }
+            }
+            false => sock_uri!(0, 0, 0, 0, 0),
         }
     }
 
@@ -588,7 +610,7 @@ impl Sockage {
                 // self.log(format!("New Receiver {}", sender));
 
                 self.add_target_to_names(&names, sender);
-                self.send_target_updates(&names); // send data to nodes registered as sender
+                // self.send_target_updates(&names); // send data to nodes registered as sender
             }
             (2, true) => {
                 self.log(format!("Received 2 from {:?}", src));
@@ -604,11 +626,29 @@ impl Sockage {
                 self.discover_sock(&sender, &src);
                 self.send_target_updates(&vec![sender]); // send data to nodes registered as sender
             }
+            (13, true) => {
+                self.shutdown(true);
+                self.send_terminate();
+            }
             _ => {}
         };
+
+        // if self.attention.elapsed().as_secs() > 0 {
+        //     //     let names = (0..self.socks.len())
+        //     //         .filter(|i| self.socks[*i].targets.len() > 0)
+        //     //         .map(|i| self.socks[i as usize].name.clone())
+        //     //         .collect();
+        //     //     self.send_target_updates(&names);
+        //     self.attention = Instant::now();
+        //     self.log_heavy();
+        // }
     }
 
-    pub fn client_parse<F: Fn(&mut Sockage, &Vec<String>)>(&mut self, names: &Vec<String>, callback: F) {
+    pub fn client_parse<F: Fn(&mut Sockage, &Vec<String>)>(
+        &mut self,
+        names: &Vec<String>,
+        callback: F,
+    ) {
         let mut buffer = SockBuffer::new();
         let src = self.recv(&mut buffer.buffer);
 
@@ -618,6 +658,7 @@ impl Sockage {
             (1313, 1) => {
                 let (_, names) = buffer.parse_name_packet();
                 self.register_names(&names);
+                // self.log(format!("Names {names:?}"));
             }
             (1313, 2) => {
                 let (_, addrs) = buffer.parse_addr_packet();
@@ -629,7 +670,7 @@ impl Sockage {
                     Some(idx) => {
                         self.data[idx] = data;
                         self.timestamp[idx] = (self.lifetime.elapsed().as_micros() as f64) * 1E-3;
-                        
+
                         // match (0..self.timestamp.len()).find(|i| {
                         //     (self.lifetime.elapsed().as_millis() as f64 - self.timestamp[*i]) as f64
                         //         >= self.micros_rate as f64 / 200.0
@@ -637,8 +678,8 @@ impl Sockage {
                         //     None => {
                         // self.timestamp = vec![(self.lifetime.elapsed().as_micros() as f64) * 1E-3]
                         callback(self, &names);
-                            // }
-                            // Some(_) => {}
+                        // }
+                        // Some(_) => {}
                         // }
                     }
 
@@ -650,30 +691,42 @@ impl Sockage {
     }
 
     pub fn sender_connect(&mut self) {
-        self.send_to(SockBuffer::data_packet(&self.name, &vec![]), sock_uri!(1313));
+        self.send_to(
+            SockBuffer::data_packet(&self.name, &vec![]),
+            sock_uri!(1313),
+        );
+
+        self.targets_configured = false;
 
         let t = Instant::now();
         while t.elapsed().as_secs() < 1 && !self.targets_configured {
             self.client_parse(&vec![], empty_cb);
         }
-        
-        match self.targets_configured {
-            true => { self.log("Connected to core"); }
-            false => {},
-        }
+
+        // match self.targets_configured {
+        //     true => {
+        //         // self.log_heavy();
+        //         self.log(format!("Connected to core {}", t.elapsed().as_micros()));
+        //     }
+        //     false => {}
+        // }
     }
 
     pub fn send(&mut self, data: Vec<f64>) {
-        // if self.lifetime.elapsed().as_secs() % 10 == 0 {
-        //     let t = Instant::now();
-        // self.client_parse(&vec![], empty_cb);
-        //     self.log(format!("parse time: {}us", t.elapsed().as_micros()));
+        // let t = Instant::now();
+        // if self.peek().port() == 1313 {
+        //     self.client_parse(&vec![], empty_cb);
+        //     println!("peek time {}", t.elapsed().as_micros());
         // }
+        if self.attention.elapsed().as_secs() > 1 || !self.targets_configured {
+            self.sender_connect();
+            self.attention = Instant::now();
+        }
 
-        match self.targets_configured {
-            false => self.sender_connect(),
-            _ => {},
-        };
+        // match  {
+        //     false => self.sender_connect(),
+        //     _ => {}
+        // };
 
         self.data_broadcast(&data);
     }
@@ -688,7 +741,7 @@ impl Sockage {
         }
     }
 
-    pub fn thread<F: Fn(&mut Sockage, &Vec<String>) + std::marker::Send  + 'static>(
+    pub fn thread<F: Fn(&mut Sockage, &Vec<String>) + std::marker::Send + 'static>(
         name: String,
         names: Vec<String>,
         callback: F,
@@ -696,19 +749,11 @@ impl Sockage {
         let mut sock = Sockage::full(&name, &names);
 
         Builder::new()
-        .name(name)
-        .spawn(move || {
-            sock.receiver_spin(names, callback);
-        })
-        .unwrap()
-    }
-
-    pub fn is_shutdown(&self) -> bool {
-        *self.shutdown.read().unwrap()
-    }
-
-    pub fn shutdown(&self, status: bool) {
-        *self.shutdown.write().unwrap() = status;
+            .name(name)
+            .spawn(move || {
+                sock.receiver_spin(names, callback);
+            })
+            .unwrap()
     }
 
     pub fn log<T: std::fmt::Debug>(&self, message: T) {
@@ -752,6 +797,27 @@ impl Sockage {
         sock.receiver_spin(names, &echo_callback);
 
         sock.log_heavy();
+    }
+
+    pub fn hz(names: Vec<String>) {
+        let mut sock = Sockage::receiver("hz-sock", &names);
+
+        pub fn hz_callback(sock: &mut Sockage, _: &Vec<String>) {
+            sock.log(1E6 / (sock.attention.elapsed().as_micros() as f64));
+            sock.attention = Instant::now();
+        }
+
+        sock.receiver_spin(names, &hz_callback);
+
+        sock.log_heavy();
+    }
+
+    pub fn shutdown_socks() {
+        let mut sock = Sockage::client("kill-sock");
+        let mut buffer = SockBuffer::stamp_packet(&sock.name);
+
+        buffer[0] = 13;
+        sock.send_to(buffer, sock_uri!(1313));
     }
 }
 

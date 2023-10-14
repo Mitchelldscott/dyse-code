@@ -11,13 +11,36 @@
  *
  ********************************************************************************/
 
-use dyse_rust::comms::hid_interface::*;
-use std::thread::Builder;
+use dyse_rust::comms::{hid_interface::*, socks::*};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    thread::Builder,
+};
 
 fn main() {
     /*
         Start an hid layer
     */
+    let core_handle = Builder::new()
+        .name("Sock Core".to_string())
+        .spawn(move || {
+            let mut sock = Sockage::core("sock-core");
+
+            assert_eq!(
+                sock.socket.local_addr().unwrap(),
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1313),
+                "Core Didn't bind to requested IP"
+            );
+
+            while !sock.is_shutdown() {
+                sock.core_parse();
+            }
+
+            sock.send_terminate();
+            sock.log_heavy();
+        })
+        .unwrap();
+
     let (mut interface, mut reader, mut writer) = HidInterface::new();
 
     interface.print();
@@ -43,7 +66,10 @@ fn main() {
         })
         .unwrap();
 
-    reader_handle.join().expect("HID Reader failed");
     interface_handle.join().expect("HID Control failed");
     writer_handle.join().expect("HID Writer failed");
+    reader_handle.join().expect("HID Reader failed");
+
+    Sockage::shutdown_socks();
+    core_handle.join().expect("Sock core failed");
 }

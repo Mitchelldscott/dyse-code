@@ -14,7 +14,7 @@
 extern crate hidapi;
 
 use crate::{
-    comms::{robot_firmware::*, hid_layer::*, hid_reader::*, hid_writer::*},
+    comms::{hid_layer::*, hid_reader::*, hid_writer::*, robot_firmware::*},
     utilities::data_structures::*,
 };
 use std::{sync::mpsc, time::Instant};

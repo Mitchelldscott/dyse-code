@@ -177,6 +177,18 @@ void task_setup_handler() {
 					overwrite_task(p);
 					break;
 
+				case 13:
+
+					for (int i = 0; i < nodes.size(); i++) {
+						delete nodes[i];
+						delete pipeline_internal->feedback[i];
+					}
+
+					run_status = 0;
+					nodes.reset(0);
+					node_ids.reset(0);
+					pipeline_internal->feedback.reset(0);
+
 				default:
 					// printf("Default Packet type: this should never happen %i\n", p->packet_type);
 					break;
@@ -189,7 +201,7 @@ void task_setup_handler() {
 
 void task_publish_handler(int i) {
 	noInterrupts();
-	pipeline_internal->feedback[i]->update += 1;
+	pipeline_internal->feedback[i]->update = 1;
 	pipeline_internal->feedback[i]->latch = nodes[i]->is_latched();
 	pipeline_internal->feedback[i]->timestamp = task_timer.millis();
 	pipeline_internal->feedback[i]->output.from_array((*nodes[i])[OUTPUT_DIMENSION]->as_array(), (*nodes[i])[OUTPUT_DIMENSION]->size());
@@ -210,6 +222,11 @@ void update_system_indicator() {
 				if (!(nodes[i]->is_configured() && nodes[i]->is_linked()) && nodes[i]->is_latched() == 0) {
 					printf("Node Configuration issue: node: %i configured: %i linked: %i latch: %i\n", i, nodes[i]->is_configured(), nodes[i]->is_linked(), nodes[i]->is_latched());
 					config_status = 1;
+
+					noInterrupts();
+					pipeline_internal->feedback[i]->update = 1;
+					pipeline_internal->feedback[i]->output.reset(0);
+					interrupts();
 				}
 			}
 		}

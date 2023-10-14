@@ -121,7 +121,7 @@ void TaskNode::set_task(Task* new_task, int rate) {
 		@param
 			task: (Task) User defined task.
 	*/
-	millis_rate = rate;
+	micros_rate = rate;
 	task = new_task;
 	input_buffer.reset(0);
 
@@ -172,24 +172,25 @@ bool TaskNode::run_task(float timer) {
 		@return
 			status: (bool) if run was called.
 	*/
-	int millis_total = int(timer * 1E3);
-	int duration = millis_total - timestamp;
+	float duration = timer - timestamp;
 	
-	if (duration < 0) {
-		timestamp = millis_total;
+	// printf("dur: %f micros_rate: %i\n", duration, micros_rate);
+
+	if (duration < 0 || duration > 1E-5 * micros_rate) {
+		timestamp = timer;
 		return false;
 	}
 
-	if (is_configured() && is_linked() && duration >= millis_rate) {
+	if (is_configured() && is_linked() && duration >= 1E-6 * micros_rate) {
 		if (latch_flag == 0) {
 			collect_inputs();
-			task->run(&input_buffer, &output_buffer, duration * 1E-3);
+			task->run(&input_buffer, &output_buffer, duration);
 		}
 		else if (latch_flag == 2) {
-			task->run(&input_buffer, &output_buffer, duration * 1E-3);
+			task->run(&input_buffer, &output_buffer, duration);
 		}
 
-		timestamp = millis_total;
+		timestamp = timer;
 		return true;
 	}
 

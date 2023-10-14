@@ -16,7 +16,7 @@ teensy_pid: 0x0486
 # spinup perception and comms here
 dyse_nodes:
   dyse_rust:
-    files: [comms_node]
+    files: [comms]
 
 # Examle of includig ros
 # Maybe need some kind of option to shut this down via cmdline

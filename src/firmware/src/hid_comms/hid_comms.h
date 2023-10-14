@@ -62,6 +62,7 @@ void send_hid_with_timestamp();
 void init_task_hid();
 void config_task_hid();
 void overwrite_task_hid();
+void nuclear_option();
 void reset_hid_stats();
 void dump_vector(Vector<float>*);
 CommsPipeline* enable_hid_interrupts();

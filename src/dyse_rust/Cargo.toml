@@ -17,6 +17,13 @@ crossbeam-channel = "0.5.8"
 
 
 [[bin]]
-name = "comms_node"
-path = "src/comms/comms_node.rs"
+name = "comms"
+path = "src/comms/comms.rs"
 
+[[bin]]
+name = "echo"
+path = "src/comms/echo.rs"
+
+[[bin]]
+name = "hz"
+path = "src/comms/hz.rs"

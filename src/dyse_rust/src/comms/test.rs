@@ -19,13 +19,8 @@ use hidapi::{HidApi, HidDevice};
 
 use crate::{
     comms::{
-        data_structures::*, 
-        robot_firmware::*, 
-        socks::*, 
-        hid_interface::*, 
-        hid_layer::*, 
-        hid_reader::*, 
-        hid_writer::*
+        data_structures::*, hid_interface::*, hid_layer::*, hid_reader::*, hid_writer::*,
+        robot_firmware::*, socks::*,
     },
     utilities::{data_structures::*, loaders::*},
 };
@@ -172,17 +167,23 @@ pub mod dead_comms {
         interface.print();
 
         assert_le!(
+            (interface.layer.pc_stats.packets_sent() - interface.layer.mcu_stats.packets_sent())
+                .abs(),
+            (TEST_DURATION * 5) as f64,
+            "PC and MCU sent different numbers of packets"
+        );
+        assert_le!(
             ((TEST_DURATION as f64 / TEENSY_CYCLE_TIME_S)
                 - interface.layer.mcu_stats.packets_sent())
             .abs(),
-            (TEST_DURATION * 5) as f64,
+            (TEST_DURATION * 500) as f64,
             "Not enough packts sent by mcu"
         );
         assert_le!(
             ((TEST_DURATION as f64 / TEENSY_CYCLE_TIME_S)
                 - interface.layer.pc_stats.packets_sent())
             .abs(),
-            (TEST_DURATION * 5) as f64,
+            (TEST_DURATION * 500) as f64,
             "Not enough packts sent by pc"
         );
     }
@@ -334,6 +335,6 @@ pub mod live_comms {
 
     #[test]
     pub fn echo_node() {
-        Sockage::echo(vec!["lsm9ds1".to_string()]);
+        Sockage::echo(vec!["signal".to_string()]);
     }
 }

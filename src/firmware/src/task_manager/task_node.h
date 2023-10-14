@@ -19,7 +19,7 @@
 class TaskNode {
 	private:
 		int latch_flag;
-		int millis_rate;
+		int micros_rate;
 		float timestamp;
 
 		Task* task;						// The thing that does the jawns
