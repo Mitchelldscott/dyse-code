@@ -4,8 +4,8 @@
 #include "utilities/timing.h"
 #include "task_manager/task.h"
 
-#define WRITE_RESOLUTION 8
-#define RESOLUTION_SCALE 255
+#define WRITE_RESOLUTION 15
+#define RESOLUTION_SCALE 32768
 
 class PwmDriver: public Task {
 	private:
@@ -27,12 +27,13 @@ class PwmDriver: public Task {
 		void setup(Vector<float>* config) {
 			pin = (*config)[0];
 			pinMode(pin, OUTPUT);
-			analogWriteFrequency(pin, 585937.5);
+			analogWriteFrequency(pin, 1000.0);
 			analogWriteResolution(WRITE_RESOLUTION);
 		}
 
 		void reset() {
 			output = 0;
+			analogWrite(pin, 0);
 		}
 
 		void clear() {

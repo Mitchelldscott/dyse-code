@@ -1,0 +1,3 @@
+project: 'rustpy'
+build: 'maturin develop'
+clean: 'cargo clean'

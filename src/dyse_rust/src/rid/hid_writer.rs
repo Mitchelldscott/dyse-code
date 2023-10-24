@@ -13,7 +13,7 @@
 
 extern crate hidapi;
 
-use crate::{comms::hid_layer::*, utilities::data_structures::*};
+use crate::{rid::hid_layer::*, utilities::data_structures::*};
 
 use crossbeam_channel::Receiver;
 use hidapi::HidDevice;
@@ -53,7 +53,7 @@ impl HidWriter {
 
     pub fn silent_channel_default(&mut self) -> ByteBuffer {
         let mut buffer = ByteBuffer::hid();
-        buffer.puts(0, vec![255, 255]);
+        buffer.puts(0, &vec![255, 255]);
         buffer.put_float(2, self.layer.pc_stats.packets_sent());
         buffer
     }
@@ -104,9 +104,9 @@ impl HidWriter {
     ///     writer.teensy = hidapi.open(vid, pid);
     ///     writer.send_report(report_id, data);
     /// ```
-    pub fn send_report(&mut self, id: u8, data: Vec<u8>) {
-        self.output.puts(0, vec![id]);
-        self.output.puts(1, data);
+    pub fn send_report(&mut self, id: u8, data: &Vec<u8>) {
+        self.output.puts(0, &vec![id]);
+        self.output.puts(1, &data);
         self.write();
     }
 
@@ -147,8 +147,7 @@ impl HidWriter {
             // }
         }
 
-        let kill_switch = vec![255; 63];
-        self.send_report(13, kill_switch);
+        self.send_report(13, &vec![255; 63]);
 
         println!("[HID-writer]: Shutdown");
     }

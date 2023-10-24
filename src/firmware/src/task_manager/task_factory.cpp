@@ -27,6 +27,10 @@ Task* new_task(const char* key){
         // printf("Task builder SINUSIOD_DRIVER_KEY\n");
         return new SinTask();
     }
+    else if (key[0] == TB6612FNG_DRIVER_KEY[0] && key[1] == TB6612FNG_DRIVER_KEY[1] && key[2] == TB6612FNG_DRIVER_KEY[2]) {
+        // printf("Task builder SINUSIOD_DRIVER_KEY\n");
+        return new Tb6612Fng();
+    }
     else {
         // printf("Task builder\n");
         return new Task();

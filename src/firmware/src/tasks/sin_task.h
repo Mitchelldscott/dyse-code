@@ -47,7 +47,7 @@ class SinTask: public Task {
 
 		void run(Vector<float>* inputs, Vector<float>* outputs, float dt) {
 			// printf("dt: %f + %f\n", counter, dt);
-			counter += dt;
+			counter = fmod(counter+dt, 2*PI);
 			(*outputs)[0] = (amplitude * sin(frequency * counter)) + shift;
 		}
 

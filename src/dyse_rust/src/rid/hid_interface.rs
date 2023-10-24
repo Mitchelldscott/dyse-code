@@ -11,10 +11,8 @@
  *
  ********************************************************************************/
 
-extern crate hidapi;
-
 use crate::{
-    comms::{hid_layer::*, hid_reader::*, hid_writer::*, robot_firmware::*},
+    rid::{hid_layer::*, hid_reader::*, hid_writer::*, robot_firmware::*},
     utilities::data_structures::*,
 };
 use std::{sync::mpsc, time::Instant};
@@ -130,11 +128,11 @@ impl HidInterface {
     }
 
     pub fn send_olatch(&mut self, i: usize, data: Vec<f64>) {
-        self.writer_tx(output_latch(i as u8, data));
+        self.writer_tx(output_latch(i as u8, &data));
     }
 
     pub fn send_ilatch(&mut self, i: usize, data: Vec<f64>) {
-        self.writer_tx(input_latch(i as u8, data));
+        self.writer_tx(input_latch(i as u8, &data));
     }
 
     pub fn print(&self) {

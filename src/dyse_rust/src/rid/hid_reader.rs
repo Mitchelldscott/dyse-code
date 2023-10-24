@@ -13,7 +13,7 @@
 
 extern crate hidapi;
 
-use crate::comms::hid_layer::*;
+use crate::rid::hid_layer::*;
 use crate::utilities::data_structures::*;
 
 use hidapi::HidDevice;

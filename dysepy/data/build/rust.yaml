@@ -1,5 +1,5 @@
 project: 'dyse_rust'
 build: 'cargo build && cargo fmt'
 clean: 'cargo clean'
-targets: ['target/debug/comms', 'target/debug/echo', 'target/debug/hz']
-install: ['lib', 'lib', 'lib']
+targets: ['target/debug/comms', 'target/debug/echo', 'target/debug/hz', 'target/debug/sender']
+install: ['lib', 'lib', 'lib', 'lib']

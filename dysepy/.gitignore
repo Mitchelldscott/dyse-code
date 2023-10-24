@@ -1,4 +1,5 @@
 bin/*
 lib/*
+env/*
 **.pyc
 **__pycache__

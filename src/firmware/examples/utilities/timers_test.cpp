@@ -15,12 +15,12 @@
 #include "utilities/splash.h"
 #include "utilities/assertions.h"
 
-#define MASTER_CYCLE_TIME_MS 	10
+#define MASTER_CYCLE_TIME_MS 	0.5
 #define MASTER_CYCLE_TIME_S 	(MASTER_CYCLE_TIME_MS * 1E-3)
 #define MASTER_CYCLE_TIME_US 	(MASTER_CYCLE_TIME_MS * 1E3)
 #define MASTER_CYCLE_TIME_ERR 	(MASTER_CYCLE_TIME_MS + 1)
 
-#define TEST_DURATION_S 		120
+#define TEST_DURATION_S 		45
 #define NUM_TEST_LOOPS			int(TEST_DURATION_S / MASTER_CYCLE_TIME_S)
 
 FTYK timer;
@@ -58,7 +58,7 @@ int main() {
 		errors += assert_geq<float>(lifetime, prev_lifetime, "Lifetime value not increasing");
 
 		if (loop_count % int(0.1 * NUM_TEST_LOOPS) == 0) {
-			timer.print("Loop");
+			timer.print("\nLoop");
 			timestamp.print();
 			printf("Loops: %i\n", loop_count);
 			printf("Lifetime: %f\n", lifetime);
@@ -68,7 +68,7 @@ int main() {
 
 		loop_count += 1;
 		prev_lifetime = lifetime;
-		lifetime += MS_2_S(timer.delay_millis(MASTER_CYCLE_TIME_MS));
+		lifetime += US_2_S(timer.delay_micros(MASTER_CYCLE_TIME_US));
 		timer.set();
 	}
 

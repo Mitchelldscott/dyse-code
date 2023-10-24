@@ -1,9 +1,12 @@
+N2G
 numpy
 pyyaml
 pandas
 pillow
 cython
 seaborn
+maturin
+patchelf
 protobuf
 requests
 setuptools

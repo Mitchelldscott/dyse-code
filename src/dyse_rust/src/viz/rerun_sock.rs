@@ -11,12 +11,26 @@
  *
  ********************************************************************************/
 
-use dyse_rust::comms::socks::*;
-use std::env;
+use crate::{
+    socks::socks::*,
+    viz::recorder::*,
+};
+use std::{
+    env,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    thread::Builder,
+};
 
 fn main() {
-    let mut args: Vec<String> = env::args().collect();
-    args.remove(0);
+    let mut names: Vec<String> = env::args().collect();
+    names.remove(0);
 
-    Sockage::echo(args);
+    let rsock = ReRunSockage::new(names);
+    let store_info = rerun::new_store_info(env::var("ROBOT_NAME"));
+
+    rerun::native_viewer::spawn(store_info, Default::default(), |rec| {
+        rsock.run(&rec).unwrap();
+    })?;
+
+    Ok(())
 }

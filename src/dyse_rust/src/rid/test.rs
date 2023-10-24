@@ -18,10 +18,11 @@ extern crate hidapi;
 use hidapi::{HidApi, HidDevice};
 
 use crate::{
-    comms::{
+    rid::{
         data_structures::*, hid_interface::*, hid_layer::*, hid_reader::*, hid_writer::*,
-        robot_firmware::*, socks::*,
+        robot_firmware::*,
     },
+    socks::socks::*,
     utilities::{data_structures::*, loaders::*},
 };
 
@@ -150,7 +151,7 @@ pub mod dead_comms {
 
             if interface.layer.control_flags.is_connected() {
                 let mut buffer = ByteBuffer::hid();
-                buffer.puts(0, vec![255, 255]);
+                buffer.puts(0, &vec![255, 255]);
                 buffer.put_float(2, interface.layer.pc_stats.packets_sent());
                 interface.writer_tx(buffer);
                 interface.check_feedback();

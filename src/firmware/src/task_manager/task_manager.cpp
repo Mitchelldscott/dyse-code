@@ -180,8 +180,9 @@ void task_setup_handler() {
 				case 13:
 
 					for (int i = 0; i < nodes.size(); i++) {
-						delete nodes[i];
+						nodes[i]->reset_config();
 						delete pipeline_internal->feedback[i];
+						delete nodes[i];
 					}
 
 					run_status = 0;
@@ -238,12 +239,8 @@ void update_system_indicator() {
 
 void spin() {
 
-	FTYK timer;
-	
 	// handle queued setup
 	task_setup_handler();
-
-	// sys_time.update();
 
 	// handle task execution
 	for (int i = 0; i < nodes.size(); i++) {
@@ -268,11 +265,13 @@ void spin() {
 
 		noInterrupts();
 		pipeline_internal->timestamp.sync(sys_time); 
-		interrupts();
+		interrupts();	
 
 	}
 
 	update_system_indicator();
+
+	sys_time.timer.delay_micros(100);
 	sys_time.update();
 
 }

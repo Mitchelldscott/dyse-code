@@ -12,10 +12,11 @@
  ********************************************************************************/
 
 use crate::{
-    comms::{data_structures::*, socks::*},
+    rid::{data_structures::*},
+    socks::socks::*,
     utilities::{data_structures::*, loaders::*},
 };
-use std::time::Instant;
+use std::{thread::JoinHandle, time::Instant};
 /// helpful constants to use
 pub static P: u8 = 0x50;
 pub static W: u8 = 0x57;
@@ -57,10 +58,15 @@ pub static SETUP_CONFIG_MODE: u8 = 2;
 /// '''
 pub static OUTPUT_MODE: u8 = 2;
 
-pub fn get_task_reset_packet(id: u8, rate: f64, driver: Vec<u8>, input_ids: Vec<u8>) -> ByteBuffer {
+pub fn get_task_reset_packet(
+    id: u8,
+    rate: f64,
+    driver: &Vec<u8>,
+    input_ids: &Vec<u8>,
+) -> ByteBuffer {
     let mut buffer = ByteBuffer::hid();
-    buffer.puts(0, vec![INIT_REPORT_ID, INIT_NODE_MODE, id]);
-    buffer.puts(3, ((1E6 / rate) as u16).to_le_bytes().to_vec());
+    buffer.puts(0, &vec![INIT_REPORT_ID, INIT_NODE_MODE, id]);
+    buffer.puts(3, &((1E6 / rate) as u16).to_le_bytes().to_vec());
     buffer.puts(5, driver);
     buffer.put(10, input_ids.len() as u8);
     buffer.puts(11, input_ids);
@@ -75,7 +81,7 @@ pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<ByteBuff
             let mut buffer = ByteBuffer::hid();
             buffer.puts(
                 0,
-                vec![
+                &vec![
                     INIT_REPORT_ID,
                     SETUP_CONFIG_MODE,
                     id,
@@ -86,7 +92,7 @@ pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<ByteBuff
 
             buffer.puts(
                 5,
-                chunk
+                &chunk
                     .into_iter()
                     .map(|x| (*x as f32).to_le_bytes())
                     .flatten()
@@ -101,9 +107,9 @@ pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<ByteBuff
 pub fn get_task_initializers(
     id: u8,
     rate: f64,
-    driver: Vec<u8>,
+    driver: &Vec<u8>,
     parameters: &Vec<f64>,
-    input_ids: Vec<u8>,
+    input_ids: &Vec<u8>,
 ) -> Vec<ByteBuffer> {
     [get_task_reset_packet(id, rate, driver, input_ids)]
         .into_iter()
@@ -111,22 +117,22 @@ pub fn get_task_initializers(
         .collect()
 }
 
-pub fn get_latch_packet(i: u8, latch: u8, data: Vec<f64>) -> ByteBuffer {
+pub fn get_latch_packet(i: u8, latch: u8, data: &Vec<f64>) -> ByteBuffer {
     let mut buffer = ByteBuffer::hid();
-    buffer.puts(0, vec![TASK_CONTROL_ID, i, latch, data.len() as u8]);
+    buffer.puts(0, &vec![TASK_CONTROL_ID, i, latch, data.len() as u8]);
     buffer.put_floats(4, data);
     buffer
 }
 
 pub fn disable_latch(i: u8) -> ByteBuffer {
-    get_latch_packet(i, 0, vec![])
+    get_latch_packet(i, 0, &vec![])
 }
 
-pub fn output_latch(i: u8, data: Vec<f64>) -> ByteBuffer {
+pub fn output_latch(i: u8, data: &Vec<f64>) -> ByteBuffer {
     get_latch_packet(i, 1, data)
 }
 
-pub fn input_latch(i: u8, data: Vec<f64>) -> ByteBuffer {
+pub fn input_latch(i: u8, data: &Vec<f64>) -> ByteBuffer {
     get_latch_packet(i, 2, data)
 }
 
@@ -201,10 +207,7 @@ impl EmbeddedTask {
         self.latch = latch;
         self.run_time = run_time;
         self.timestamp = timestamp;
-        // if self.lifetime.elapsed().as_millis() as f64 > 780.0 / self.rate as f64 {
         self.sock.send(data);
-        // self.lifetime = Instant::now();
-        // }
     }
 
     pub fn print(&self) {
@@ -243,6 +246,8 @@ impl EmbeddedTask {
 pub struct RobotFirmware {
     pub configured: Vec<bool>,
     pub tasks: Vec<EmbeddedTask>,
+    pub latch_handles: Vec<JoinHandle<()>>,
+    pub config_handles: Vec<JoinHandle<()>>,
 }
 
 impl RobotFirmware {
@@ -266,10 +271,53 @@ impl RobotFirmware {
             })
             .collect();
 
-        RobotFirmware {
+        let mut rfw = RobotFirmware {
             configured: vec![false; tasks.len()],
             tasks: tasks,
-        }
+            latch_handles: vec![],
+            config_handles: vec![],
+        };
+
+        rfw.latch_handles = (0..rfw.tasks.len())
+            .map(|i| {
+                let id = i as u8;
+                let writer_clone = writer_tx.clone();
+                Sockage::thread(
+                    format!("{}/lio", &rfw.tasks[i].name),
+                    vec![format!("{}/latch", rfw.tasks[i].name)],
+                    move |sock: &mut Sockage, _: &Vec<String>| match writer_clone
+                        .send(input_latch(id, &sock.data[0]))
+                    {
+                        Ok(_) => {}
+                        _ => sock.shutdown(true),
+                    },
+                )
+            })
+            .collect();
+
+        rfw.config_handles = (0..rfw.tasks.len())
+            .map(|i| {
+                let id = i as u8;
+                let rate = rfw.tasks[i].rate;
+                let driver = rfw.tasks[i].driver();
+                let input_ids = rfw.input_task_ids(&rfw.tasks[i].input_names);
+                let writer_clone = writer_tx.clone();
+                Sockage::thread(
+                    format!("{}/cio", &rfw.tasks[i].name),
+                    vec![format!("{}/config", rfw.tasks[i].name)],
+                    move |sock: &mut Sockage, _: &Vec<String>| {
+                        get_task_initializers(id, rate, &driver, &sock.data[0], &input_ids)
+                            .into_iter()
+                            .for_each(|packet| match writer_clone.send(packet) {
+                                Ok(_) => {}
+                                _ => sock.shutdown(true),
+                            });
+                    },
+                )
+            })
+            .collect();
+
+        rfw
     }
 
     pub fn default(writer_tx: crossbeam_channel::Sender<ByteBuffer>) -> RobotFirmware {
@@ -316,9 +364,9 @@ impl RobotFirmware {
             false => get_task_initializers(
                 idx as u8,
                 self.tasks[idx].rate,
-                self.tasks[idx].driver(),
+                &self.tasks[idx].driver(),
                 &self.tasks[idx].parameters,
-                self.input_task_ids(&self.tasks[idx].input_names),
+                &self.input_task_ids(&self.tasks[idx].input_names),
             ),
         }
     }

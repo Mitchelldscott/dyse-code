@@ -11,7 +11,10 @@
  *
  ********************************************************************************/
 
-use dyse_rust::comms::{hid_interface::*, socks::*};
+use dyse_rust::{
+    socks::socks::*,
+    rid::{hid_interface::*},
+};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     thread::Builder,

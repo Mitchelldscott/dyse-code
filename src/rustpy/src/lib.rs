@@ -12,11 +12,17 @@
  ********************************************************************************/
 
 use dyse_rust::comms::socks::*;
-use std::env;
+use pyo3::prelude::*;
 
-fn main() {
-    let mut args: Vec<String> = env::args().collect();
-    args.remove(0);
+#[pyfunction]
+fn send(name: &str, data: Vec<f64>) -> PyResult<()> {
+    let mut sock = Sockage::sender(&name);
+    sock.send(data);
+    Ok(())
+}
 
-    Sockage::hz(args);
+#[pymodule]
+fn socks(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(send, m)?)?;
+    Ok(())
 }

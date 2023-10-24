@@ -115,7 +115,7 @@ impl ByteBuffer {
         /*
             Write an i32 to the buffer.
         */
-        self.puts(idx, value.to_le_bytes().to_vec());
+        self.puts(idx, &value.to_le_bytes().to_vec());
     }
 
     pub fn get_float(&self, idx: usize) -> f64 {
@@ -149,10 +149,10 @@ impl ByteBuffer {
             Write an f64 to the buffer.
             actually writes as f32
         */
-        self.puts(idx, (value as f32).to_le_bytes().to_vec());
+        self.puts(idx, &(value as f32).to_le_bytes().to_vec());
     }
 
-    pub fn put_floats(&mut self, idx: usize, values: Vec<f64>) {
+    pub fn put_floats(&mut self, idx: usize, values: &Vec<f64>) {
         /*
             Write an f64 to the buffer.
             actually writes as f32
@@ -172,7 +172,7 @@ impl ByteBuffer {
         self.data[idx..idx + n].to_vec()
     }
 
-    pub fn puts(&mut self, idx: usize, data: Vec<u8>) {
+    pub fn puts(&mut self, idx: usize, data: &Vec<u8>) {
         /*
             Write a vec of values to the buffer.
         */

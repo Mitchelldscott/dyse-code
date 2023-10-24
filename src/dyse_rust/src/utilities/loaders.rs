@@ -139,6 +139,7 @@ impl BuffYamlUtil {
     pub fn parse_float(&self, item: &str, data: &Yaml) -> Result<f64, ByuParseError> {
         match &data[item] {
             Yaml::Real(val) => Ok(val.parse::<f64>().unwrap()),
+            Yaml::Integer(val) => Ok(*val as f64),
             _ => Err(ByuParseError::float(item, &self.yaml_path)),
         }
     }

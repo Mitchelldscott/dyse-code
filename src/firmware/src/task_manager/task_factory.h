@@ -18,6 +18,7 @@
 #include "tasks/lsm9ds1.h"
 #include "tasks/lsm6dsox.h"
 #include "tasks/sin_task.h"
+#include "tasks/tb6612fng.h"
 #include "tasks/constant_task.h"
 #include "tasks/complimentary_filter.h"
 
@@ -27,6 +28,7 @@
 #define COMPFLTR_DRIVER_KEY "CMF"
 #define CONSTANT_DRIVER_KEY "VAL"
 #define SINUSIOD_DRIVER_KEY "SIN"
+#define TB6612FNG_DRIVER_KEY "FNG"
 
 Task* new_task(const char*);
 

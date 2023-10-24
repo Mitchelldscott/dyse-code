@@ -153,6 +153,7 @@ void Timestamp::set() {
 }
 
 void Timestamp::wrap() {
+
 	if (seconds >= 60) {
 		
 		minutes += int(seconds / 60);
@@ -169,7 +170,7 @@ void Timestamp::wrap() {
 
 	if (hours >= 24) {
 
-		hours -= 24;
+		hours = 0;
 	
 	}
 
@@ -185,21 +186,22 @@ void Timestamp::update() {
 	float timer_seconds = timer.secs();
 	timer.set();
 	accumulate(timer_seconds);
+
 }
 
 float Timestamp::secs() {
+	update();
 	return seconds + timer.secs();
 }
 
 float Timestamp::total_seconds() {
-	update();
-	return timer.secs() + seconds + (60 * (minutes + (60 * hours)));
+	return secs() + (60 * (minutes + (60 * hours)));
 }
 
 void Timestamp::sync(Timestamp ts) {
 	hours = ts.hours;
 	minutes = ts.minutes;
-	seconds = ts.seconds + ts.timer.secs();
+	seconds = ts.secs();
 	wrap();
 }
 

@@ -21,10 +21,20 @@ $SUDO python3 get-pip.py
 
 rm get-pip.py
 
+
+#
+#	Setup virtual envirnment
+#
+if [[ ! -d ${PROJECT_ROOT}/dysepy/env ]]; then
+	cd ${PROJECT_ROOT}/dysepy && python3 -m venv env
+fi
+
+dc && source ${PROJECT_ROOT}/dysepy/env/bin/activate
+
 #
 #	Install python requirements with pip3
 #
 
-echo -e "\n\tInstalling DyseCode python3 requirements\n"
+echo -e "\n\tInstalling Dyse-Code Python3 requirements\n"
 
-pip3 install -r ${PROJECT_ROOT}/dysepy/data/install/python3_requirements.txt
+pip install -r ${PROJECT_ROOT}/dysepy/data/install/python3_requirements.txt

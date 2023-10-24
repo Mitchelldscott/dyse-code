@@ -135,7 +135,7 @@ pub mod buffer_tests {
 
         let mut buffer = ByteBuffer::new(64);
         // buffer.print_data();
-        buffer.puts(i, n1.clone());
+        buffer.puts(i, &n1);
 
         assert_eq!(
             buffer.get(i),
@@ -176,7 +176,7 @@ pub mod buffer_tests {
         let n1: Vec<u8> = vec![0x40, 0x49, 0xf, 0xdb];
 
         let mut buffer = ByteBuffer::new(64);
-        buffer.puts(2, n1.clone());
+        buffer.puts(2, &n1);
         buffer.print();
 
         assert_eq!(
