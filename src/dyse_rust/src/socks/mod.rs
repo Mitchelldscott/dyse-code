@@ -1,4 +1,4 @@
-// pub mod socks;
 pub mod sock_tests;
+pub mod socks;
 // pub mod sock_bringup;
-// pub mod data_structures;
+pub mod data_structures;
