@@ -23,3 +23,15 @@ socket2 = "0.5.5"
 # path = "src/viz/rerun_sock.rs"
 
 
+
+[[bin]]
+name = "send"
+path = "src/socks/sender.rs"
+
+[[bin]]
+name = "echo"
+path = "src/socks/echo.rs"
+
+[[bin]]
+name = "hz"
+path = "src/socks/hz.rs"

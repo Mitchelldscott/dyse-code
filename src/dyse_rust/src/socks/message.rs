@@ -11,41 +11,7 @@
  *
  ********************************************************************************/
 
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    time::Instant,
-};
-
-#[macro_export]
-macro_rules! ipv4 {
-    () => {{
-        Ipv4Addr::UNSPECIFIED
-    }};
-    ($ip1:expr, $ip2:expr, $ip3:expr, $ip4:expr) => {{
-        Ipv4Addr::new($ip1, $ip2, $ip3, $ip4)
-    }};
-}
-
-#[macro_export]
-macro_rules! sock_uri {
-    () => {{
-        SocketAddr::new(IpAddr::V4(ipv4!()), 0)
-    }};
-    ($port:expr) => {{
-        SocketAddr::new(IpAddr::V4(ipv4!()), $port)
-    }};
-    ($ip:expr, $port:expr) => {{
-        SocketAddr::new(IpAddr::V4($ip), $port)
-    }};
-    ($ip1:expr, $ip2:expr, $ip3:expr, $ip4:expr, $port:expr) => {{
-        SocketAddr::new(IpAddr::V4(ipv4!($ip1, $ip2, $ip3, $ip4)), $port)
-    }};
-}
-
-pub const MULTICAST_IP: Ipv4Addr = ipv4!(224, 0, 0, 251);
-pub const INADDR_ANY: SocketAddr = sock_uri!();
-pub const DEFAULT_URI: SocketAddr = sock_uri!(1313);
-pub const MULTICAST_URI: SocketAddr = sock_uri!(MULTICAST_IP, 1313);
+use std::time::Instant;
 
 pub const UDP_PACKET_SIZE: usize = 1024;
 pub const SOCK_HEADER_LEN: usize = 64;
@@ -66,34 +32,6 @@ pub fn get8_bytes(idx: usize, buffer: &[u8]) -> [u8; 8] {
         buffer[idx + 6],
         buffer[idx + 7],
     ]
-}
-
-pub fn address_to_bytes(addr: &SocketAddr) -> [u8; 6] {
-    let ip_bytes = match addr.ip() {
-        IpAddr::V4(ip) => ip.octets(),
-        _ => [0, 0, 0, 0],
-    };
-
-    let port_bytes = addr.port().to_be_bytes();
-
-    [
-        ip_bytes[0],
-        ip_bytes[1],
-        ip_bytes[2],
-        ip_bytes[3],
-        port_bytes[0],
-        port_bytes[1],
-    ]
-}
-
-pub fn address_from_bytes(bytes: &[u8]) -> SocketAddr {
-    sock_uri!(
-        bytes[0],
-        bytes[1],
-        bytes[2],
-        bytes[3],
-        u16::from_be_bytes([bytes[4], bytes[5]])
-    )
 }
 
 #[derive(Clone)]
@@ -157,7 +95,7 @@ impl MessageFragment {
         )
     }
 
-    pub fn to_bytes(&self, header: &[u8]) -> UdpPacket {
+    pub fn to_bytes(&self, header: [u8; SOCK_HEADER_LEN]) -> UdpPacket {
         let mut buffer = [0; UDP_PACKET_SIZE];
         header
             .iter()
@@ -172,19 +110,19 @@ impl MessageFragment {
 
 #[derive(Clone)]
 pub struct Message {
-    pub complete: bool,
-    pub header: [u8; SOCK_HEADER_LEN],
-    pub timestamps: Vec<Instant>,
     pub fragments: Vec<MessageFragment>,
+    pub timestamp: Instant,
+    pub micros_rate: u64,
+    pub ntx: i64,
 }
 
 impl Message {
     pub fn new() -> Message {
         Message {
-            complete: false,
-            header: [0; SOCK_HEADER_LEN],
-            timestamps: vec![],
             fragments: vec![],
+            timestamp: Instant::now(),
+            micros_rate: 0,
+            ntx: 0,
         }
     }
 
@@ -201,37 +139,46 @@ impl Message {
             .collect()
     }
 
-    pub fn from_payload(header: [u8; SOCK_HEADER_LEN], payload: Vec<u8>) -> Message {
+    pub fn from_payload(payload: Vec<u8>) -> Message {
         let fragments = Message::shatter(payload);
 
         Message {
-            complete: true,
-            header: header,
-            timestamps: vec![Instant::now(); fragments.len()],
             fragments: fragments,
+            timestamp: Instant::now(),
+            micros_rate: 0,
+            ntx: 0,
         }
     }
 
-    pub fn as_packets(&self) -> Vec<UdpPacket> {
+    pub fn packets(&self, header: [u8; SOCK_HEADER_LEN]) -> Vec<UdpPacket> {
         (0..self.fragments.len())
-            .map(|i| self.fragments[i].to_bytes(&self.header))
+            .map(|i| self.fragments[i].to_bytes(header))
             .collect()
     }
 
-    pub fn collect(&mut self, fragment: MessageFragment) -> bool {
-        if self.fragments.len() == 0 {
-            self.timestamps = vec![Instant::now(); fragment.total_fragments];
-            self.fragments = (0..fragment.total_fragments)
-                .map(|_| MessageFragment::new(255, fragment.total_fragments))
-                .collect();
+    pub fn init_fragments(&mut self, n: usize) {
+        self.fragments = (0..n).map(|_| MessageFragment::new(255, n)).collect();
+    }
+
+    pub fn is_available(&self) -> bool {
+        self.micros_rate as u128 / 2 > self.timestamp.elapsed().as_micros()
+    }
+
+    pub fn collect(&mut self, ntx: i64, micros: u64, fragment: MessageFragment) -> bool {
+        if self.fragments.len() == 0 || ntx > self.ntx || micros > 2 * self.micros_rate {
+            self.init_fragments(fragment.total_fragments);
         }
 
-        self.timestamps[fragment.offset] = Instant::now();
+        self.ntx = ntx;
+        self.micros_rate = micros;
         self.fragments[fragment.offset] = fragment.clone();
 
         match (0..self.fragments.len()).find(|&i| self.fragments[i].offset != i) {
             Some(_) => false,
-            None => true,
+            None => {
+                self.timestamp = Instant::now();
+                true
+            }
         }
     }
 

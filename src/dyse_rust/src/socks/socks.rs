@@ -11,6 +11,7 @@
  *
  ********************************************************************************/
 use std::{
+    fmt,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     // sync::{Arc, RwLock},
     // thread::{Builder, JoinHandle},
@@ -21,22 +22,60 @@ use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::ipv4;
 use crate::sock_uri;
-use crate::socks::data_structures::*;
+use crate::socks::message::*;
 
-pub const SOCK_NAME_LEN_IDX:    usize = 0;
-pub const SOCK_NUM_TXS_IDX:     usize = SOCK_NAME_LEN_IDX + 1;
-pub const SOCK_NUM_RXS_IDX:     usize = SOCK_NUM_TXS_IDX + 8;
-pub const SOCK_ACTIVITY_IDX:    usize = SOCK_NUM_RXS_IDX + 8;
-pub const SOCK_NAME_IDX:        usize = SOCK_ACTIVITY_IDX + 8;
-pub const MAX_SOCK_NAME_LEN:    usize = SOCK_HEADER_LEN - SOCK_NAME_IDX;
+#[macro_export]
+macro_rules! ipv4 {
+    () => {{
+        Ipv4Addr::UNSPECIFIED
+    }};
+    ($ip1:expr, $ip2:expr, $ip3:expr, $ip4:expr) => {{
+        Ipv4Addr::new($ip1, $ip2, $ip3, $ip4)
+    }};
+}
 
-// pub fn empty_cb(_: &mut Sockage, _: &Vec<String>) {}
+#[macro_export]
+macro_rules! sock_uri {
+    () => {{
+        SocketAddr::new(IpAddr::V4(ipv4!()), 0)
+    }};
+    ($port:expr) => {{
+        SocketAddr::new(IpAddr::V4(ipv4!()), $port)
+    }};
+    ($ip:expr, $port:expr) => {{
+        SocketAddr::new(IpAddr::V4($ip), $port)
+    }};
+    ($ip1:expr, $ip2:expr, $ip3:expr, $ip4:expr, $port:expr) => {{
+        SocketAddr::new(IpAddr::V4(ipv4!($ip1, $ip2, $ip3, $ip4)), $port)
+    }};
+}
+
+pub const MULTICAST_IP: Ipv4Addr = ipv4!(224, 0, 0, 224);
+pub const INADDR_ANY: SocketAddr = sock_uri!();
+pub const DEFAULT_URI: SocketAddr = sock_uri!(1331);
+pub const MULTICAST_URI: SocketAddr = sock_uri!(MULTICAST_IP, 1331);
+
+pub const SOCK_NAME_LEN_IDX: usize = 0;
+pub const SOCK_NUM_TXS_IDX: usize = SOCK_NAME_LEN_IDX + 1;
+pub const SOCK_NUM_RXS_IDX: usize = SOCK_NUM_TXS_IDX + 8;
+pub const SOCK_ACTIVITY_IDX: usize = SOCK_NUM_RXS_IDX + 8;
+pub const SOCK_NAME_IDX: usize = SOCK_ACTIVITY_IDX + 8;
+pub const MAX_SOCK_NAME_LEN: usize = SOCK_HEADER_LEN - SOCK_NAME_IDX;
+
+pub const TASK_SUCCESS: u64 = 0;
+pub const TASK_ERROR: u64 = 1;
+pub const TASK_WARN: u64 = 2;
+pub const TASK_IO_ERROR: u64 = 3;
+
+pub const SOCK_IO_LIMIT: u128 = 10;
+
+pub type SockClosureFn = fn(Vec<u8>, &mut Vec<u8>, f64) -> u64;
 
 fn new_multicast() -> UdpSocket {
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
 
-    socket.set_nonblocking(true).unwrap();
-    // socket.set_reuse_address(true).unwrap();
+    // socket.set_nonblocking(true).unwrap();
+    socket.set_reuse_address(true).unwrap();
 
     socket
         .set_read_timeout(Some(Duration::from_millis(100)))
@@ -53,6 +92,54 @@ fn new_multicast() -> UdpSocket {
     socket.try_into().unwrap()
 }
 
+#[derive(Debug, Clone)]
+pub struct TaskError {
+    pub message: String,
+}
+
+impl TaskError {
+    pub fn new(code: u64, targets: &Vec<usize>) -> TaskError {
+        TaskError {
+            message: format!("code={code},targets={targets:?}"),
+        }
+    }
+}
+
+impl fmt::Display for TaskError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+pub struct SockClosure<F> {
+    pub timestamp: Instant,
+    pub targets: Vec<usize>,
+    pub task: F,
+}
+
+impl<F: Fn(Vec<u8>, &mut Vec<u8>, f64) -> u64> SockClosure<F> {
+    pub fn new(targets: Vec<usize>, task: F) -> SockClosure<F> {
+        SockClosure {
+            timestamp: Instant::now(),
+            targets: targets,
+            task: task,
+        }
+    }
+
+    pub fn execute(&mut self, data: Vec<u8>, output: &mut Vec<u8>) -> Result<(), TaskError> {
+        let code = (self.task)(
+            data,
+            output,
+            self.timestamp.elapsed().as_micros() as f64 * 1E-6,
+        );
+        self.timestamp = Instant::now();
+        match code {
+            TASK_SUCCESS => Ok(()),
+            _ => Err(TaskError::new(code, &self.targets)),
+        }
+    }
+}
+
 pub struct Sock {
     pub socket: UdpSocket,
     pub lifetime: Instant,
@@ -64,10 +151,11 @@ pub struct Sock {
 
     pub targets: Vec<String>,
     pub messages: Vec<Message>,
+    pub closures: Vec<SockClosure<SockClosureFn>>,
 }
 
 impl Sock {
-    pub fn new(name: &str, targets: Vec<&str>) -> Sock {
+    pub fn new(name: &str, targets: Vec<String>) -> Sock {
         if name.as_bytes().len() > MAX_SOCK_NAME_LEN {
             panic!("Node name {name} is to long");
         }
@@ -83,14 +171,15 @@ impl Sock {
 
             targets: targets.iter().map(|target| target.to_string()).collect(),
             messages: vec![Message::new(); targets.len()],
+            closures: vec![],
         }
     }
 
-    pub fn header_from_bytes(buffer: &[u8]) -> (String, i64, i64, f64) {
+    pub fn header_from_bytes(buffer: [u8; SOCK_HEADER_LEN]) -> (String, i64, i64, u64) {
         let name_len = buffer[SOCK_NAME_LEN_IDX] as usize;
-        let ntx = i64::from_be_bytes(get8_bytes(SOCK_NUM_TXS_IDX, buffer));
-        let nrx = i64::from_be_bytes(get8_bytes(SOCK_NUM_TXS_IDX, buffer));
-        let activity = f64::from_be_bytes(get8_bytes(SOCK_ACTIVITY_IDX, buffer));
+        let ntx = i64::from_be_bytes(get8_bytes(SOCK_NUM_TXS_IDX, &buffer));
+        let nrx = i64::from_be_bytes(get8_bytes(SOCK_NUM_TXS_IDX, &buffer));
+        let activity = u64::from_be_bytes(get8_bytes(SOCK_ACTIVITY_IDX, &buffer));
         let name =
             String::from_utf8(buffer[SOCK_NAME_IDX..name_len + SOCK_NAME_IDX].to_vec()).unwrap();
 
@@ -103,7 +192,7 @@ impl Sock {
             .into_iter()
             .chain(self.ntx.to_be_bytes())
             .chain(self.nrx.to_be_bytes())
-            .chain((self.activity.elapsed().as_micros() as f64 * 1E-6).to_be_bytes())
+            .chain((self.activity.elapsed().as_micros() as u64).to_be_bytes())
             .chain(self.name.as_bytes().to_vec())
             .chain(vec![0; pad])
             .collect::<Vec<u8>>()
@@ -111,9 +200,30 @@ impl Sock {
             .unwrap()
     }
 
+    pub fn is_target(&self, name: &str) -> Option<usize> {
+        (0..self.targets.len()).find(|&i| self.targets[i as usize] == *name)
+    }
+
+    pub fn link_closure(&mut self, targets: &Vec<String>, task: SockClosureFn) {
+        let target_idxs = targets
+            .iter()
+            .map(|target| match self.is_target(target) {
+                Some(i) => i,
+                _ => {
+                    self.targets.push(target.to_string());
+                    self.messages.push(Message::new());
+                    self.targets.len() - 1
+                }
+            })
+            .collect();
+
+        self.closures.push(SockClosure::new(target_idxs, task));
+    }
+
     pub fn tx(&mut self, mut buffer: UdpPacket, addr: SocketAddr) -> bool {
         match self.socket.send_to(&mut buffer, addr) {
             Ok(_) => {
+                self.activity = Instant::now();
                 self.ntx += 1;
                 true
             }
@@ -126,10 +236,7 @@ impl Sock {
         buffer: &mut UdpPacket,
     ) -> Option<([u8; SOCK_HEADER_LEN], MessageFragment)> {
         match self.socket.recv_from(buffer) {
-            Ok((_, _)) => {
-                self.nrx += 1;
-                Some(MessageFragment::from_bytes(*buffer))
-            }
+            Ok((_, _)) => Some(MessageFragment::from_bytes(*buffer)),
             Err(_) => None,
         }
     }
@@ -143,18 +250,21 @@ impl Sock {
         }
     }
 
-    pub fn is_target(&self, name: &String) -> Option<usize> {
-        (0..self.targets.len()).find(|&i| self.targets[i as usize] == *name)
+    pub fn tx_payload(&mut self, payload: Vec<u8>) {
+        let msg = Message::from_payload(payload);
+        msg.packets(self.header_bytes()).iter().for_each(|buffer| {
+            self.tx(*buffer, MULTICAST_URI);
+        });
     }
 
     pub fn collect(
         &mut self,
         idx: usize,
-        header: [u8; SOCK_HEADER_LEN],
+        ntx: i64,
+        activity: u64,
         fragment: MessageFragment,
     ) -> Option<usize> {
-        self.messages[idx].header = header;
-        match self.messages[idx].collect(fragment) {
+        match self.messages[idx].collect(ntx, activity, fragment) {
             true => Some(idx),
             _ => None,
         }
@@ -163,9 +273,12 @@ impl Sock {
     pub fn try_rx(&mut self, buffer: &mut UdpPacket) -> Option<usize> {
         match self.rx(buffer) {
             Some((header, fragment)) => {
-                let (name, _, _, _) = Sock::header_from_bytes(&header);
+                let (name, ntx, _, activity) = Sock::header_from_bytes(header);
                 match self.is_target(&name) {
-                    Some(i) => self.collect(i, header, fragment),
+                    Some(i) => {
+                        self.nrx += 1;
+                        self.collect(i, ntx, activity, fragment)
+                    }
                     _ => None,
                 }
             }
@@ -173,31 +286,77 @@ impl Sock {
         }
     }
 
+    pub fn closure_available(&self, idx: usize, available_messages: &Vec<usize>) -> bool {
+        (0..self.closures[idx].targets.len())
+            .all(|i| available_messages.contains(&self.closures[idx].targets[i]))
+    }
+
+    pub fn chain_payloads(&self, messages: &Vec<usize>) -> Vec<u8> {
+        messages
+            .iter()
+            .map(|&i| self.messages[i].to_payload())
+            .flatten()
+            .collect()
+    }
+
+    pub fn try_closures(&mut self) {
+        let available_messages = (0..self.messages.len())
+            .filter(|&i| self.messages[i].is_available())
+            .collect();
+        (0..self.closures.len()).for_each(|i| {
+            if self.closure_available(i, &available_messages) {
+                let mut output = vec![];
+
+                let payload = self.chain_payloads(&self.closures[i].targets);
+                self.closures[i].execute(payload, &mut output).unwrap();
+
+                if output.len() > 0 {
+                    self.tx_payload(output);
+                }
+            }
+        })
+    }
+
+    pub fn spin(&mut self) {
+        while self.lifetime.elapsed().as_secs() < 5 {
+            let t = Instant::now();
+            let mut buffer = [0u8; UDP_PACKET_SIZE];
+            match self.try_rx(&mut buffer) {
+                Some(_) => {
+                    self.try_closures();
+                }
+                _ => {}
+            };
+
+            while t.elapsed().as_micros() < SOCK_IO_LIMIT {}
+        }
+    }
+
     pub fn log<T: std::fmt::Debug>(&self, message: T) {
         println!(
-            "[{:?}]:{:?}-{}<{},{}>\t\t{:?}\t({}s)",
+            "[{:?}]: {:?}\n\tPackets Tx/Rx <{},{}>\n\tInfo: {:?}\n\tLifetime: {}s",
             self.name,
             self.socket.local_addr().unwrap(),
-            self.is_shutdown(),
-            self.send_count,
-            self.recv_count,
+            self.ntx,
+            self.nrx,
             message,
             self.lifetime.elapsed().as_micros() as f64 * 1E-6,
         );
     }
 
-    pub fn log_heavy(&self) {
+    pub fn log_heavy<T: std::fmt::Debug>(&self, message: T) {
         println!(
-            "==[Sockage]==\n[{:?}]:{}-{}<{},{}>\t({}s)\nSocks:\n\tnames:\n {:?}\n\taddress:\n{:?}\n\ttargets:\n{:?}",
+            "\n==[Sock]==\n[{:?}]: {:?}\n\tPackets Tx/Rx <{},{}>\n\tInfo: {:?}\n\tTargets: {:?} ({})\n\tRates: {:?} Hz\n\tActivity: {}s\n\tLifetime: {}s",
             self.name,
             self.socket.local_addr().unwrap(),
-            self.is_shutdown(),
-            self.send_count,
-            self.recv_count,
+            self.ntx,
+            self.nrx,
+            message,
+            self.targets,
+            self.messages.len(),
+            (0..self.messages.len()).map(|i| 1E6 / self.messages[i].micros_rate as f64).collect::<Vec<f64>>(),
+            self.activity.elapsed().as_micros() as f64 * 1E-6,
             self.lifetime.elapsed().as_micros() as f64 * 1E-6,
-            self.socks.iter().map(|s| s.name.clone()).collect::<Vec<String>>(),
-            self.socks.iter().map(|s| s.address.clone()).collect::<Vec<SocketAddr>>(),
-            self.socks.iter().map(|s| s.targets.clone()).collect::<Vec<Vec<String>>>(),
         );
     }
 }
@@ -606,94 +765,5 @@ impl Sock {
 //             self.socks.iter().map(|s| s.address.clone()).collect::<Vec<SocketAddr>>(),
 //             self.socks.iter().map(|s| s.targets.clone()).collect::<Vec<Vec<String>>>(),
 //         );
-//     }
-// }
-
-// struct SockApi {};
-
-// impl SockApi{
-//     pub fn core(name: &str) -> Sockage {
-//         Sockage::new(name, sock_uri!(1313), 200)
-//     }
-
-//     pub fn client(name: &str) -> Sockage {
-//         Sockage::new(name, sock_uri!(0, 0, 0, 0, 0), 200)
-//     }
-
-//     pub fn sender(name: &str) -> Sockage {
-//         let mut sock = Sockage::new(name, sock_uri!(0, 0, 0, 0, 0), 200);
-//         sock.sender_connect();
-//         sock
-//     }
-
-//     pub fn receiver(name: &str, names: &Vec<String>) -> Sockage {
-//         let mut sock = Sockage::new(name, sock_uri!(0, 0, 0, 0, 0), 200);
-//         sock.data = vec![vec![]; names.len()];
-//         sock.timestamp = vec![0.0; names.len()];
-//         sock.rates = vec![0.0; names.len()];
-//         sock.data_request(names);
-//         sock
-//     }
-
-//     pub fn full(name: &str, names: &Vec<String>) -> Sockage {
-//         let mut sock = Sockage::new(name, sock_uri!(0, 0, 0, 0, 0), 200);
-//         sock.sender_connect();
-//         sock.data = vec![vec![]; names.len()];
-//         sock.timestamp = vec![0.0; names.len()];
-//         sock.rates = vec![0.0; names.len()];
-//         sock.data_request(names);
-//         sock
-//     }
-
-//     pub fn thread<F: Fn(&mut Sockage, &Vec<String>) + std::marker::Send + 'static>(
-//         name: String,
-//         names: Vec<String>,
-//         callback: F,
-//     ) -> JoinHandle<()> {
-//         let mut sock = Sockage::full(&name, &names);
-
-//         Builder::new()
-//             .name(name)
-//             .spawn(move || {
-//                 sock.receiver_spin(names, callback);
-//                 sock.log_heavy();
-//             })
-//             .unwrap()
-//     }
-
-//     pub fn echo(names: Vec<String>) {
-//         let mut sock = Sockage::receiver("echo-sock", &names);
-
-//         pub fn echo_callback(sock: &mut Sockage, names: &Vec<String>) {
-//             names
-//                 .iter()
-//                 .zip(sock.data.iter())
-//                 .for_each(|(name, data)| sock.log(format!("[{name}] {data:?}")))
-//         }
-
-//         sock.receiver_spin(names, &echo_callback);
-
-//         sock.log_heavy();
-//     }
-
-//     pub fn hz(names: Vec<String>) {
-//         let mut sock = Sockage::receiver("hz-sock", &names);
-
-//         pub fn hz_callback(sock: &mut Sockage, _: &Vec<String>) {
-//             sock.log(1E6 / (sock.attention.elapsed().as_micros() as f64));
-//             sock.attention = Instant::now();
-//         }
-
-//         sock.receiver_spin(names, &hz_callback);
-
-//         sock.log_heavy();
-//     }
-
-//     pub fn shutdown_socks() {
-//         let mut sock = Sockage::client("kill-sock");
-//         let mut buffer = SockBuffer::stamp_packet(&sock);
-
-//         buffer[0] = 13;
-//         sock.send_to(buffer, sock_uri!(1313));
 //     }
 // }

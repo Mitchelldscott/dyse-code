@@ -11,12 +11,12 @@
  *
  ********************************************************************************/
 
-use dyse_rust::socks::socks::*;
+use dyse_rust::socks::sockapi::*;
 use std::env;
 
 fn main() {
     let mut args: Vec<String> = env::args().collect();
     args.remove(0);
 
-    Sockage::echo(args);
+    SockApi::echo(&args);
 }

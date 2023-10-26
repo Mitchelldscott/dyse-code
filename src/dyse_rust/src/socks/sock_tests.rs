@@ -14,7 +14,7 @@
 #![allow(unused_macros)]
 use more_asserts::assert_le;
 
-use crate::{ipv4, sock_uri, socks::data_structures::*, socks::socks::*};
+use crate::{ipv4, sock_uri, socks::message::*, socks::sockapi::*, socks::socks::*};
 use std::{
     env, io,
     time::{Duration, Instant},
@@ -26,47 +26,216 @@ pub mod usock {
     pub const UDP_PACKET_SIZE: usize = 1024;
 
     #[test]
-    pub fn multicast_node() {
+    pub fn multicast_sender() {
         let lifetime = Instant::now();
         let mut sock = Sock::new("node1", vec![]);
 
-        let msg = Message::from_payload(sock.header_bytes(), vec![1; 2048]);
-
-        assert_eq!(msg.fragments.len(), 3);
-        assert_eq!(msg.fragments[0].n_bytes, 950);
-        assert_eq!(msg.fragments[1].n_bytes, 950);
-        assert_eq!(msg.fragments[2].n_bytes, 148);
-
         while lifetime.elapsed().as_secs() < 5 {
             let t = Instant::now();
-            msg.as_packets().iter().for_each(|buffer| {
+            let msg = Message::from_payload(vec![1; 100]);
+            msg.packets(sock.header_bytes()).iter().for_each(|buffer| {
                 sock.tx(*buffer, MULTICAST_URI);
             });
 
             while t.elapsed().as_millis() < 500 {}
         }
+
+        sock.log_heavy("");
     }
 
     #[test]
-    pub fn multicast_listen() {
-        let mut sock = Sock::new("node2", vec!["node1"]);
+    pub fn multicast_listener() {
+        let mut sock = Sock::new("node2", vec!["node1".to_string()]);
 
         while sock.lifetime.elapsed().as_secs() < 5 {
             let t = Instant::now();
             let mut buffer = [0u8; UDP_PACKET_SIZE];
             match sock.try_rx(&mut buffer) {
                 Some(i) => {
-                    println!(
-                        "listener: received {} bytes from {:?}",
+                    sock.log(format!(
+                        "received {} bytes from {:?}",
                         sock.messages[i].to_payload().len(),
                         sock.targets[i],
-                    )
+                    ));
                 }
                 _ => {}
             };
 
             while t.elapsed().as_micros() < 100 {}
         }
+
+        sock.log_heavy("");
+    }
+
+    #[test]
+    pub fn multicast_listener2() {
+        let mut sock = Sock::new("node3", vec!["node1".to_string()]);
+
+        while sock.lifetime.elapsed().as_secs() < 5 {
+            let t = Instant::now();
+            let mut buffer = [0u8; UDP_PACKET_SIZE];
+            match sock.try_rx(&mut buffer) {
+                Some(i) => {
+                    sock.log(format!(
+                        "received {} bytes from {:?}",
+                        sock.messages[i].to_payload().len(),
+                        sock.targets[i],
+                    ));
+                }
+                _ => {}
+            };
+
+            while t.elapsed().as_micros() < 100 {}
+        }
+
+        sock.log_heavy("");
+    }
+}
+
+#[cfg(test)]
+pub mod low_sock {
+    use super::*;
+    pub const UDP_PACKET_SIZE: usize = 1024;
+
+    #[test]
+    pub fn node0() {
+        let lifetime = Instant::now();
+        let mut sock = Sock::new("node0", vec![]);
+
+        while lifetime.elapsed().as_secs() < 5 {
+            let t = Instant::now();
+            sock.tx_payload(vec![1; 100]);
+            while t.elapsed().as_millis() < 250 {}
+        }
+
+        sock.log_heavy("");
+    }
+
+    pub fn multicast_receiver(name: &str, targets: Vec<String>, callback: SockClosureFn) {
+        let mut sock = Sock::new(name, vec![]);
+        sock.link_closure(&targets, callback);
+        sock.spin();
+        sock.log_heavy("");
+    }
+
+    #[test]
+    pub fn node1() {
+        multicast_receiver("node1", vec!["node0".to_string()], |data, output, _| {
+            *output = data;
+            0
+        });
+    }
+
+    #[test]
+    pub fn node2() {
+        multicast_receiver("node2", vec!["node0".to_string(), "node1".to_string()], |data, _, _| {
+            println!("[node0, node1]: {} {data:?}", data.len());
+            0
+        });
+    }
+}
+
+#[cfg(test)]
+pub mod mid_sock {
+    use super::*;
+
+    #[test]
+    pub fn node0() {
+        let lifetime = Instant::now();
+        let mut sock = Sock::new("node0", vec![]);
+
+        while lifetime.elapsed().as_secs() < 5 {
+            let t = Instant::now();
+            sock.tx_payload((1..11).collect());
+            while t.elapsed().as_millis() < 10 {}
+        }
+
+        sock.log_heavy("");
+    }
+
+    pub fn multicast_receiver(name: &str, targets: Vec<String>, callback: SockClosureFn) {
+        let mut sock = SockApi::relay(name, &targets, callback);
+        sock.spin();
+        sock.log_heavy("");
+    }
+
+    #[test]
+    pub fn relay() {
+        multicast_receiver("node1", vec!["node0".to_string()], |data, output, _| {
+            *output = data.iter().map(|x| x + 1).collect();
+            0
+        });
+    }
+
+    // #[test]
+    // pub fn echo() {
+    //     SockApi::echo(&vec!["node0", "node1"]);
+    // }
+
+    #[test]
+    pub fn hz() {
+        SockApi::hz(&vec!["node0".to_string(), "node1".to_string()]);
+    }
+}
+
+#[cfg(test)]
+pub mod high_sock {
+    use super::*;
+
+    #[test]
+    pub fn node0() {
+        let lifetime = Instant::now();
+        let mut sock = Sock::new("node0", vec![]);
+
+        while lifetime.elapsed().as_secs() < 5 {
+            let t = Instant::now();
+            sock.tx_payload((1..11).collect());
+            while t.elapsed().as_millis() < 10 {}
+        }
+
+        sock.log_heavy("");
+    }
+
+    #[test]
+    pub fn node1() {
+        let lifetime = Instant::now();
+        let mut sock = Sock::new("node1", vec![]);
+
+        while lifetime.elapsed().as_secs() < 5 {
+            let t = Instant::now();
+            sock.tx_payload((1..11).collect());
+            while t.elapsed().as_millis() < 10 {}
+        }
+
+        sock.log_heavy("");
+    }
+
+    pub fn multicast_hub(name: &str, targets: Vec<Vec<String>>, callback: Vec<SockClosureFn>) {
+        let mut sock = SockApi::hub(name, targets, callback);
+        sock.spin();
+        sock.log_heavy("");
+    }
+
+    #[test]
+    pub fn relay() {
+        let targets = vec![vec!["node0".to_string()], vec!["node1".to_string()]];
+        let closures = vec![
+            |_: Vec<u8>, _: &mut Vec<u8>, _| {
+                // *output = data.into_iter().map(|x| x).collect();
+                0
+            }, 
+            |data: Vec<u8>, output: &mut Vec<u8>, _| {
+                *output = data.into_iter().map(|x| x).collect();
+                0
+            }
+        ];
+
+        multicast_hub("node2",targets, closures);
+    }
+
+    #[test]
+    pub fn hz() {
+        SockApi::hz(&vec!["node2".to_string()]);
     }
 }
 
@@ -77,13 +246,13 @@ pub mod message {
     #[test]
     pub fn message_shatter() {
         let payload = (0..255).collect();
-        let message = Message::from_payload([0; SOCK_HEADER_LEN], payload);
-        let packets = message.as_packets();
+        let message = Message::from_payload(payload);
+        let packets = message.packets([0; SOCK_HEADER_LEN]);
 
         let mut new_message = Message::new();
 
         packets.into_iter().for_each(|packet| {
-            new_message.collect(MessageFragment::from_bytes(packet).1);
+            new_message.collect(0, 0, MessageFragment::from_bytes(packet).1);
         });
 
         let new_payload = new_message.to_payload();
@@ -97,66 +266,19 @@ pub mod message {
 
     #[test]
     pub fn message_from_sock() {
-        let sock = Sock::new("node1", vec![]);
-        let msg = Message::from_payload(sock.header_bytes(), vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
-        let (name, _, _, _) = Sock::header_from_bytes(&msg.header);
+        let msg = Message::from_payload(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
-        assert_eq!(name, "node1", "name was wrong");
-
-        let packets = msg.as_packets();
+        let packets = msg.packets([0; SOCK_HEADER_LEN]);
         let (header, _) = MessageFragment::from_bytes(packets[0]);
-        let (name1, _, _, _) = Sock::header_from_bytes(&header);
+        let (name1, _, _, _) = Sock::header_from_bytes(header);
 
         assert_eq!(name1, "node1", "name1 was wrong");
+
+        let big_msg = Message::from_payload(vec![1; 2048]);
+
+        assert_eq!(big_msg.fragments.len(), 3);
+        assert_eq!(big_msg.fragments[0].n_bytes, 950);
+        assert_eq!(big_msg.fragments[1].n_bytes, 950);
+        assert_eq!(big_msg.fragments[2].n_bytes, 148);
     }
 }
-
-// #[cfg(test)]
-// pub mod u_socks {
-//     use super::*;
-//     pub const UDP_PACKET_SIZE: usize = 1024;
-
-//     #[test]
-//     pub fn multicast_read() {
-//         let mut t = Instant::now();
-//         let socket = UdpSocket::bind(env::var("DYSE_CORE_URI").unwrap())
-//             .expect("Couldn't bind to socket 1313");
-//         socket.set_read_timeout(Some(Duration::new(0, 1))).unwrap();
-//         assert_le!(t.elapsed().as_micros(), 120, "Core bind time us");
-
-//         t = Instant::now();
-//         let mut buf = [0; UDP_PACKET_SIZE];
-//         let (size, src_addr) = socket.recv_from(&mut buf).expect("Didn't receive data");
-//         assert_le!(t.elapsed().as_micros(), 123, "Core read time us");
-
-//         assert_eq!(
-//             src_addr,
-//             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 7878)
-//         );
-//         assert_eq!(size, UDP_PACKET_SIZE, "Packet was incorrect size");
-//         assert_eq!(
-//             packet_sum(buf),
-//             UDP_PACKET_SIZE as u32,
-//             "Buffer read had incorrect sum"
-//         );
-//     }
-
-//     #[test]
-//     pub fn multicast_write() {
-//         let mut t = Instant::now();
-//         let socket = UdpSocket::bind("127.0.0.1:7878").expect("Couldn't bind to socket 7878");
-//         assert_le!(t.elapsed().as_micros(), 100, "Client bind time us");
-
-//         t = Instant::now();
-//         socket.connect(env::var("DYSE_CORE_URI").unwrap()).unwrap();
-//         socket.set_write_timeout(Some(Duration::new(0, 1))).unwrap();
-//         assert_le!(t.elapsed().as_micros(), 100, "Client connect time us");
-
-//         t = Instant::now();
-//         let mut buf = [1; UDP_PACKET_SIZE];
-//         let size = socket.send(&mut buf).expect("Didn't send data");
-//         assert_le!(t.elapsed().as_micros(), 100, "Client write time us");
-
-//         assert_eq!(size, UDP_PACKET_SIZE, "Sent the wrong packet size");
-//     }
-// }
