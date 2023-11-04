@@ -60,13 +60,13 @@ macro_rules! build_fn {
     );
     (|$context:ident: $U:ty, $time:ident, $($target:ident: $T:ty),+| $body:expr) => (
         |task_input: Vec<Vec<u8>>, task_context: &mut Vec<u8>, $time: f64| -> (usize, Vec<u8>) {
-            let mut argc = 0;
+            let mut _argc = 0;
             let return_code = 0;
             #[allow(unused_mut)]
             let mut $context: $U = bincode::deserialize(&task_context).unwrap();
             $(
-                let $target: $T = bincode::deserialize(&task_input[argc]).unwrap();
-                argc += 1;
+                let $target: $T = bincode::deserialize(&task_input[_argc]).unwrap();
+                _argc += 1;
             )+
 
             let output = $body;

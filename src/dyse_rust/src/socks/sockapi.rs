@@ -13,7 +13,6 @@
 // use std::thread::{Builder, JoinHandle};
 
 use crate::{
-    build_fn,
     socks::{
         socks::*,
         message::UdpPayload,
@@ -65,7 +64,7 @@ macro_rules! add_task {
 ///
 ///
 
-pub fn shutdown() {
+pub fn shutdown() { // what the fuck is this?
     let mut sock = Sock::source("shutdown");
     sock.tx_payload(0);
     sock.tx_payload(0);

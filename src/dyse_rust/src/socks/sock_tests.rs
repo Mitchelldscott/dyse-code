@@ -68,8 +68,8 @@ pub mod high_sock {
 
     #[test]
     pub fn demo_relay() {
-        let mut sock = sync!("relay", vec!["val", "inv"], "sum", 2, |_ctx: u8, data: f64| {
-            data[0] + data[1]
+        let mut sock = sync!("relay", vec!["val", "inv"], "sum", 2, |_ctx: u8, a: f64, b: f64| {
+            a + b
         });
         sock.spin();
         sock.log_heavy("");

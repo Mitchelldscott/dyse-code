@@ -18,5 +18,5 @@ fn main() {
     let mut args: Vec<String> = env::args().collect();
     args.remove(0);
     
-    sockapi::echo::<f64>("echo-sock", args.iter().map(|s| s as &str).collect());
+    sockapi::echo::<f64>("echo", args.iter().map(|s| s as &str).collect());
 }
