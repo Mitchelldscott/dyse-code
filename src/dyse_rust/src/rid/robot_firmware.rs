@@ -150,7 +150,7 @@ pub struct EmbeddedTask {
     pub run_time: f64,
     pub timestamp: f64,
 
-    pub sock: Sockage,
+    pub sock: Sock,
     pub lifetime: Instant,
 }
 
@@ -176,7 +176,7 @@ impl EmbeddedTask {
             run_time: 0.0,
             timestamp: 0.0,
 
-            sock: Sockage::sender(&name),
+            sock: Sock::source(&name),
             lifetime: Instant::now(),
         }
     }
@@ -220,29 +220,6 @@ impl EmbeddedTask {
     }
 }
 
-// let feedback_socks = (0..tasks.len()).map(|i| {
-//     Sockage::sender(&tasks[i].name)
-// }).collect();
-
-// let latch_handles = (0..tasks.len()).map(|i| {
-//     let writer_clone = writer_tx.clone();
-//     pub fn callback(sock: &mut Sockage, _: &Vec<String>, data: &Vec<Vec<f64>>) {
-//         writer_clone.send(input_latch(i, data[0]));
-//     }
-//     Sockage::thread(format!("{}/lctrl", &tasks[i].name), vec![format!("{}/latch", tasks[i].name)], &callback)
-// }).collect();
-
-// let config_handles = (0..tasks.len()).map(|i| {
-//     let rate = tasks[i].rate;
-//     let driver = tasks[i].driver();
-//     let input_ids = tasks[i].input_ids;
-//     let writer_clone = writer_tx.clone();
-//     pub fn callback(sock: &mut Sockage, _: &Vec<String>, data: &Vec<Vec<f64>>) {
-//         get_task_initializers(i, rate, driver, &data[0], input_ids).iter().for_each(|packet| writer_clone.send(packet))
-//     }
-//     Sockage::thread(format!("{}/cctrl", &tasks[i].name), vec![format!("{}/config", tasks[i].name)], &callback)
-// }).collect();
-
 pub struct RobotFirmware {
     pub configured: Vec<bool>,
     pub tasks: Vec<EmbeddedTask>,
@@ -278,11 +255,13 @@ impl RobotFirmware {
             config_handles: vec![],
         };
 
+        let mut sock = Sock::relay("Firmware/",)
+
         rfw.latch_handles = (0..rfw.tasks.len())
             .map(|i| {
                 let id = i as u8;
                 let writer_clone = writer_tx.clone();
-                Sockage::thread(
+                Sock::thread(
                     format!("{}/lio", &rfw.tasks[i].name),
                     vec![format!("{}/latch", rfw.tasks[i].name)],
                     move |sock: &mut Sockage, _: &Vec<String>| match writer_clone
@@ -427,14 +406,8 @@ impl RobotFirmware {
                     report.get(2) as u16,
                     report.get_float(56),
                     mcu_lifetime,
-                    report.get_floats(4, report.get(3) as usize),
+                    report.gets(4, report.get(3) as usize),
                 );
-                // self.tasks[mode as usize].update_output(
-                //     report.get(2),
-                //     report.get_floats(4, report.get(3) as usize),
-                //     mcu_lifetime,
-                //     report.get_float(56),
-                // );
             } else {
                 report.print();
             }

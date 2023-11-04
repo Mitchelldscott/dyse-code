@@ -14,229 +14,78 @@
 #![allow(unused_macros)]
 use more_asserts::assert_le;
 
-use crate::{ipv4, sock_uri, socks::message::*, socks::sockapi::*, socks::socks::*};
+use crate::{
+    ipv4, 
+    sock_uri, 
+    build_fn,
+    sync,
+    unsync,
+    add_task,
+    socks::{
+        sockapi, 
+        task::*,
+        socks::*, 
+        message::*, 
+    }
+};
 use std::{
     env, io,
     time::{Duration, Instant},
 };
 
 #[cfg(test)]
-pub mod usock {
-    use super::*;
-    pub const UDP_PACKET_SIZE: usize = 1024;
-
-    #[test]
-    pub fn multicast_sender() {
-        let lifetime = Instant::now();
-        let mut sock = Sock::new("node1", vec![]);
-
-        while lifetime.elapsed().as_secs() < 5 {
-            let t = Instant::now();
-            let msg = Message::from_payload(vec![1; 100]);
-            msg.packets(sock.header_bytes()).iter().for_each(|buffer| {
-                sock.tx(*buffer, MULTICAST_URI);
-            });
-
-            while t.elapsed().as_millis() < 500 {}
-        }
-
-        sock.log_heavy("");
-    }
-
-    #[test]
-    pub fn multicast_listener() {
-        let mut sock = Sock::new("node2", vec!["node1".to_string()]);
-
-        while sock.lifetime.elapsed().as_secs() < 5 {
-            let t = Instant::now();
-            let mut buffer = [0u8; UDP_PACKET_SIZE];
-            match sock.try_rx(&mut buffer) {
-                Some(i) => {
-                    sock.log(format!(
-                        "received {} bytes from {:?}",
-                        sock.messages[i].to_payload().len(),
-                        sock.targets[i],
-                    ));
-                }
-                _ => {}
-            };
-
-            while t.elapsed().as_micros() < 100 {}
-        }
-
-        sock.log_heavy("");
-    }
-
-    #[test]
-    pub fn multicast_listener2() {
-        let mut sock = Sock::new("node3", vec!["node1".to_string()]);
-
-        while sock.lifetime.elapsed().as_secs() < 5 {
-            let t = Instant::now();
-            let mut buffer = [0u8; UDP_PACKET_SIZE];
-            match sock.try_rx(&mut buffer) {
-                Some(i) => {
-                    sock.log(format!(
-                        "received {} bytes from {:?}",
-                        sock.messages[i].to_payload().len(),
-                        sock.targets[i],
-                    ));
-                }
-                _ => {}
-            };
-
-            while t.elapsed().as_micros() < 100 {}
-        }
-
-        sock.log_heavy("");
-    }
-}
-
-#[cfg(test)]
-pub mod low_sock {
-    use super::*;
-    pub const UDP_PACKET_SIZE: usize = 1024;
-
-    #[test]
-    pub fn node0() {
-        let lifetime = Instant::now();
-        let mut sock = Sock::new("node0", vec![]);
-
-        while lifetime.elapsed().as_secs() < 5 {
-            let t = Instant::now();
-            sock.tx_payload(vec![1; 100]);
-            while t.elapsed().as_millis() < 250 {}
-        }
-
-        sock.log_heavy("");
-    }
-
-    pub fn multicast_receiver(name: &str, targets: Vec<String>, callback: SockClosureFn) {
-        let mut sock = Sock::new(name, vec![]);
-        sock.link_closure(&targets, callback);
-        sock.spin();
-        sock.log_heavy("");
-    }
-
-    #[test]
-    pub fn node1() {
-        multicast_receiver("node1", vec!["node0".to_string()], |data, output, _| {
-            *output = data;
-            0
-        });
-    }
-
-    #[test]
-    pub fn node2() {
-        multicast_receiver("node2", vec!["node0".to_string(), "node1".to_string()], |data, _, _| {
-            println!("[node0, node1]: {} {data:?}", data.len());
-            0
-        });
-    }
-}
-
-#[cfg(test)]
-pub mod mid_sock {
-    use super::*;
-
-    #[test]
-    pub fn node0() {
-        let lifetime = Instant::now();
-        let mut sock = Sock::new("node0", vec![]);
-
-        while lifetime.elapsed().as_secs() < 5 {
-            let t = Instant::now();
-            sock.tx_payload((1..11).collect());
-            while t.elapsed().as_millis() < 10 {}
-        }
-
-        sock.log_heavy("");
-    }
-
-    pub fn multicast_receiver(name: &str, targets: Vec<String>, callback: SockClosureFn) {
-        let mut sock = SockApi::relay(name, &targets, callback);
-        sock.spin();
-        sock.log_heavy("");
-    }
-
-    #[test]
-    pub fn relay() {
-        multicast_receiver("node1", vec!["node0".to_string()], |data, output, _| {
-            *output = data.iter().map(|x| x + 1).collect();
-            0
-        });
-    }
-
-    // #[test]
-    // pub fn echo() {
-    //     SockApi::echo(&vec!["node0", "node1"]);
-    // }
-
-    #[test]
-    pub fn hz() {
-        SockApi::hz(&vec!["node0".to_string(), "node1".to_string()]);
-    }
-}
-
-#[cfg(test)]
 pub mod high_sock {
     use super::*;
 
     #[test]
-    pub fn node0() {
+    pub fn demo_source() {
         let lifetime = Instant::now();
-        let mut sock = Sock::new("node0", vec![]);
+        let mut sock = Sock::source("source");
 
+        let mut i = 0.0f64;
         while lifetime.elapsed().as_secs() < 5 {
             let t = Instant::now();
-            sock.tx_payload((1..11).collect());
-            while t.elapsed().as_millis() < 10 {}
+            sock.tx_payload(i);
+            i += 1.0;
+            while t.elapsed().as_millis() < 250 {}
         }
 
         sock.log_heavy("");
+        sockapi::shutdown();
     }
 
     #[test]
-    pub fn node1() {
-        let lifetime = Instant::now();
-        let mut sock = Sock::new("node1", vec![]);
-
-        while lifetime.elapsed().as_secs() < 5 {
-            let t = Instant::now();
-            sock.tx_payload((1..11).collect());
-            while t.elapsed().as_millis() < 10 {}
-        }
-
-        sock.log_heavy("");
-    }
-
-    pub fn multicast_hub(name: &str, targets: Vec<Vec<String>>, callback: Vec<SockClosureFn>) {
-        let mut sock = SockApi::hub(name, targets, callback);
+    pub fn demo_hub() {
+        let mut sock = unsync!("hub", vec!["source"], "inv", 0, |_ctx: u8, data: f64| {
+            -data[0]
+        });
+        add_task!(sock, vec![], "val", 0, |_ctx: u8, data: f64| {
+            data[0]
+        });
         sock.spin();
         sock.log_heavy("");
     }
 
     #[test]
-    pub fn relay() {
-        let targets = vec![vec!["node0".to_string()], vec!["node1".to_string()]];
-        let closures = vec![
-            |_: Vec<u8>, _: &mut Vec<u8>, _| {
-                // *output = data.into_iter().map(|x| x).collect();
-                0
-            }, 
-            |data: Vec<u8>, output: &mut Vec<u8>, _| {
-                *output = data.into_iter().map(|x| x).collect();
-                0
-            }
-        ];
-
-        multicast_hub("node2",targets, closures);
+    pub fn demo_relay() {
+        let mut sock = sync!("relay", vec!["val", "inv"], "sum", 2, |_ctx: u8, data: f64| {
+            data[0] + data[1]
+        });
+        sock.spin();
+        sock.log_heavy("");
     }
 
     #[test]
-    pub fn hz() {
-        SockApi::hz(&vec!["node2".to_string()]);
+    pub fn demo_hz() {
+        let t = Instant::now();
+        while t.elapsed().as_secs() < 3 {}
+        sockapi::hz::<f64>("demo/hz", vec!["sum", "val", "inv"]);
     }
+
+    // #[test]
+    // pub fn demo_echo() {
+    //     sockapi::sync_echo::<f64>("demo/echo", vec!["sum", "val", "inv"]);
+    // }
 }
 
 #[cfg(test)]
@@ -270,7 +119,9 @@ pub mod message {
 
         let packets = msg.packets([0; SOCK_HEADER_LEN]);
         let (header, _) = MessageFragment::from_bytes(packets[0]);
-        let (name1, _, _, _) = Sock::header_from_bytes(header);
+
+        let sock = Sock::source("node0");
+        let (name1, _, _, _) = sock.header_from_bytes(header);
 
         assert_eq!(name1, "node1", "name1 was wrong");
 

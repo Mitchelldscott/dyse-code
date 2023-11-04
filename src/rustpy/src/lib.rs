@@ -11,15 +11,16 @@
  *
  ********************************************************************************/
 
-use dyse_rust::comms::socks::*;
+use dyse_rust::socks::{socks::Sock};
 use pyo3::prelude::*;
 
 #[pyfunction]
-fn send(name: &str, data: Vec<f64>) -> PyResult<()> {
-    let mut sock = Sockage::sender(&name);
-    sock.send(data);
+fn send(name: &str, data: Vec<u8>) -> PyResult<()> {
+    let mut sock = Sock::source(&name);
+    sock.tx_payload(data);
     Ok(())
 }
+
 
 #[pymodule]
 fn socks(_py: Python, m: &PyModule) -> PyResult<()> {

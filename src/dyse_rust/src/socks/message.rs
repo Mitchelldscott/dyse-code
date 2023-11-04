@@ -20,6 +20,7 @@ pub const PAYLOAD_IDX: usize = SOCK_HEADER_LEN + FRAG_HEADER_LEN;
 pub const MAX_FRAGMENT_SIZE: usize = UDP_PACKET_SIZE - PAYLOAD_IDX;
 
 pub type UdpPacket = [u8; UDP_PACKET_SIZE];
+pub type UdpPayload = Vec<u8>;
 
 pub fn get8_bytes(idx: usize, buffer: &[u8]) -> [u8; 8] {
     [
@@ -161,7 +162,7 @@ impl Message {
     }
 
     pub fn is_available(&self) -> bool {
-        self.micros_rate as u128 / 2 > self.timestamp.elapsed().as_micros()
+        (self.micros_rate / 2) as u128 > self.timestamp.elapsed().as_micros()
     }
 
     pub fn collect(&mut self, ntx: i64, micros: u64, fragment: MessageFragment) -> bool {
@@ -182,7 +183,7 @@ impl Message {
         }
     }
 
-    pub fn to_payload(&self) -> Vec<u8> {
+    pub fn to_payload(&self) -> UdpPayload {
         (0..self.fragments.len())
             .map(|i| self.fragments[i].payload[0..self.fragments[i].n_bytes].to_vec())
             .flatten()

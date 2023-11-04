@@ -11,17 +11,15 @@
  *
  ********************************************************************************/
 use std::{
-    fmt,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
-    // sync::{Arc, RwLock},
-    // thread::{Builder, JoinHandle},
     time::{Duration, Instant},
+    sync::{Arc, RwLock},
 };
-
 use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::ipv4;
 use crate::sock_uri;
+use crate::socks::task::*;
 use crate::socks::message::*;
 
 #[macro_export]
@@ -62,14 +60,7 @@ pub const SOCK_ACTIVITY_IDX: usize = SOCK_NUM_RXS_IDX + 8;
 pub const SOCK_NAME_IDX: usize = SOCK_ACTIVITY_IDX + 8;
 pub const MAX_SOCK_NAME_LEN: usize = SOCK_HEADER_LEN - SOCK_NAME_IDX;
 
-pub const TASK_SUCCESS: u64 = 0;
-pub const TASK_ERROR: u64 = 1;
-pub const TASK_WARN: u64 = 2;
-pub const TASK_IO_ERROR: u64 = 3;
-
 pub const SOCK_IO_LIMIT: u128 = 10;
-
-pub type SockClosureFn = fn(Vec<u8>, &mut Vec<u8>, f64) -> u64;
 
 fn new_multicast() -> UdpSocket {
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
@@ -92,54 +83,6 @@ fn new_multicast() -> UdpSocket {
     socket.try_into().unwrap()
 }
 
-#[derive(Debug, Clone)]
-pub struct TaskError {
-    pub message: String,
-}
-
-impl TaskError {
-    pub fn new(code: u64, targets: &Vec<usize>) -> TaskError {
-        TaskError {
-            message: format!("code={code},targets={targets:?}"),
-        }
-    }
-}
-
-impl fmt::Display for TaskError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-pub struct SockClosure<F> {
-    pub timestamp: Instant,
-    pub targets: Vec<usize>,
-    pub task: F,
-}
-
-impl<F: Fn(Vec<u8>, &mut Vec<u8>, f64) -> u64> SockClosure<F> {
-    pub fn new(targets: Vec<usize>, task: F) -> SockClosure<F> {
-        SockClosure {
-            timestamp: Instant::now(),
-            targets: targets,
-            task: task,
-        }
-    }
-
-    pub fn execute(&mut self, data: Vec<u8>, output: &mut Vec<u8>) -> Result<(), TaskError> {
-        let code = (self.task)(
-            data,
-            output,
-            self.timestamp.elapsed().as_micros() as f64 * 1E-6,
-        );
-        self.timestamp = Instant::now();
-        match code {
-            TASK_SUCCESS => Ok(()),
-            _ => Err(TaskError::new(code, &self.targets)),
-        }
-    }
-}
-
 pub struct Sock {
     pub socket: UdpSocket,
     pub lifetime: Instant,
@@ -148,17 +91,20 @@ pub struct Sock {
     pub nrx: i64,
 
     pub name: String,
+    pub shutdown: Arc<RwLock<bool>>,
 
+    pub tasks: Vec<Task>,
     pub targets: Vec<String>,
     pub messages: Vec<Message>,
-    pub closures: Vec<SockClosure<SockClosureFn>>,
 }
 
 impl Sock {
-    pub fn new(name: &str, targets: Vec<String>) -> Sock {
-        if name.as_bytes().len() > MAX_SOCK_NAME_LEN {
-            panic!("Node name {name} is to long");
-        }
+    pub fn source(name: &str) -> Sock {
+
+        let short_name = match name.len() > MAX_SOCK_NAME_LEN {
+            true => name.chars().take(MAX_SOCK_NAME_LEN).collect(),
+            false => name.to_string(),
+        };
 
         Sock {
             socket: new_multicast(),
@@ -167,15 +113,59 @@ impl Sock {
             ntx: 0,
             nrx: 0,
 
-            name: name.to_string(),
+            name: short_name,
+            shutdown: Arc::new(RwLock::new(false)),
 
-            targets: targets.iter().map(|target| target.to_string()).collect(),
-            messages: vec![Message::new(); targets.len()],
-            closures: vec![],
+            tasks: vec![],
+            targets: vec![],
+            messages: vec![],
         }
     }
 
-    pub fn header_from_bytes(buffer: [u8; SOCK_HEADER_LEN]) -> (String, i64, i64, u64) {
+    pub fn relay<T: serde::Serialize>(name: &str, targets: Vec<&str>, task_name: &str, context: T, task: TaskFn, task_targets: Vec<usize>) -> Sock {
+        let short_name = match name.len() > MAX_SOCK_NAME_LEN {
+            true => name.chars().take(MAX_SOCK_NAME_LEN).collect(),
+            false => name.to_string(),
+        };
+
+        let short_task_name = match task_name.len() > MAX_SOCK_NAME_LEN {
+            true => task_name.chars().take(MAX_SOCK_NAME_LEN).collect(),
+            false => {
+                match task_name.len() == 0 {
+                    true => short_name.clone(),
+                    false => task_name.to_string(),
+                }
+            }
+        };
+
+        let n_targets = targets.len();
+
+        Sock {
+            socket: new_multicast(),
+            lifetime: Instant::now(),
+            activity: Instant::now(),
+            ntx: 0,
+            nrx: 0,
+
+            name: short_name,
+            shutdown: Arc::new(RwLock::new(false)),
+
+            tasks: vec![Task::new(short_task_name.as_str(), task_targets, bincode::serialize(&context).expect("Failed to serialize default context"), task)],
+            targets: targets.iter().map(|t| t.to_string()).collect(),
+            messages: vec![Message::new(); n_targets],
+        }
+    }
+
+    pub fn unsynced<T: serde::Serialize>(name: &str, targets: Vec<&str>, task_name: &str, context: T, task: TaskFn) -> Sock {
+        Sock::relay(name, targets, task_name, context, task, vec![])
+    }
+
+    pub fn synced<T: serde::Serialize>(name: &str, targets: Vec<&str>, task_name: &str, context: T, task: TaskFn) -> Sock {
+        let n_targets = targets.len();
+        Sock::relay(name, targets, task_name, context, task, (0..n_targets).collect())
+    }
+
+    pub fn header_from_bytes(&self, buffer: [u8; SOCK_HEADER_LEN]) -> (String, i64, i64, u64) {
         let name_len = buffer[SOCK_NAME_LEN_IDX] as usize;
         let ntx = i64::from_be_bytes(get8_bytes(SOCK_NUM_TXS_IDX, &buffer));
         let nrx = i64::from_be_bytes(get8_bytes(SOCK_NUM_TXS_IDX, &buffer));
@@ -186,14 +176,16 @@ impl Sock {
         (name, ntx, nrx, activity)
     }
 
-    pub fn header_bytes(&self) -> [u8; SOCK_HEADER_LEN] {
-        let pad = MAX_SOCK_NAME_LEN - self.name.as_bytes().len();
-        [self.name.as_bytes().len() as u8]
+    pub fn header_bytes(&self, name: &str, micros: u64) -> [u8; SOCK_HEADER_LEN] {
+        let name_bytes = name.as_bytes().to_vec();
+        let pad = MAX_SOCK_NAME_LEN - name_bytes.len();
+
+        [name_bytes.len() as u8]
             .into_iter()
             .chain(self.ntx.to_be_bytes())
             .chain(self.nrx.to_be_bytes())
-            .chain((self.activity.elapsed().as_micros() as u64).to_be_bytes())
-            .chain(self.name.as_bytes().to_vec())
+            .chain(micros.to_be_bytes())
+            .chain(name_bytes)
             .chain(vec![0; pad])
             .collect::<Vec<u8>>()
             .try_into()
@@ -204,7 +196,7 @@ impl Sock {
         (0..self.targets.len()).find(|&i| self.targets[i as usize] == *name)
     }
 
-    pub fn link_closure(&mut self, targets: &Vec<String>, task: SockClosureFn) {
+    pub fn link_task<T: serde::Serialize>(&mut self, name: &str, targets: Vec<&str>, context: T, task: TaskFn) {
         let target_idxs = targets
             .iter()
             .map(|target| match self.is_target(target) {
@@ -217,13 +209,13 @@ impl Sock {
             })
             .collect();
 
-        self.closures.push(SockClosure::new(target_idxs, task));
+        self.tasks.retain(|task| task.name != name);
+        self.tasks.push(Task::new(name, target_idxs, bincode::serialize(&context).expect("Failed to serialize default context"), task));
     }
 
     pub fn tx(&mut self, mut buffer: UdpPacket, addr: SocketAddr) -> bool {
         match self.socket.send_to(&mut buffer, addr) {
             Ok(_) => {
-                self.activity = Instant::now();
                 self.ntx += 1;
                 true
             }
@@ -250,9 +242,17 @@ impl Sock {
         }
     }
 
-    pub fn tx_payload(&mut self, payload: Vec<u8>) {
+    pub fn tx_payload<T: serde::Serialize>(&mut self, payload: T) {
+        let msg = Message::from_payload(bincode::serialize(&payload).unwrap());
+        msg.packets(self.header_bytes(&self.name, self.activity.elapsed().as_micros() as u64)).iter().for_each(|buffer| {
+            self.tx(*buffer, MULTICAST_URI);
+        });
+        self.activity = Instant::now();
+    }
+
+    pub fn tx_task_payload(&mut self, idx: usize, payload: Vec<u8>, micros: u64) {
         let msg = Message::from_payload(payload);
-        msg.packets(self.header_bytes()).iter().for_each(|buffer| {
+        msg.packets(self.header_bytes(&self.tasks[idx].name, micros)).iter().for_each(|buffer| {
             self.tx(*buffer, MULTICAST_URI);
         });
     }
@@ -273,10 +273,17 @@ impl Sock {
     pub fn try_rx(&mut self, buffer: &mut UdpPacket) -> Option<usize> {
         match self.rx(buffer) {
             Some((header, fragment)) => {
-                let (name, ntx, _, activity) = Sock::header_from_bytes(header);
+
+                let (name, ntx, _, activity) = self.header_from_bytes(header);
+
+                if name == "shutdown" { // this should be handled better, kill sock is bad
+                    *self.shutdown.write().unwrap() = true;
+                }
+
                 match self.is_target(&name) {
                     Some(i) => {
                         self.nrx += 1;
+                        // check the mode, maybe don't collect
                         self.collect(i, ntx, activity, fragment)
                     }
                     _ => None,
@@ -286,44 +293,58 @@ impl Sock {
         }
     }
 
-    pub fn closure_available(&self, idx: usize, available_messages: &Vec<usize>) -> bool {
-        (0..self.closures[idx].targets.len())
-            .all(|i| available_messages.contains(&self.closures[idx].targets[i]))
+    pub fn task_available(&self, idx: usize, available_messages: &Vec<usize>) -> bool {
+        // self.log(format!("available msgs: {:?} {}", available_messages, self.tasks[idx].timestamp.elapsed().as_micros()));
+        self.tasks[idx].timestamp.elapsed().as_micros() >
+            (0..self.tasks[idx].targets.len()).map(|i| {
+                match available_messages.iter().position(|&msg| msg == self.tasks[idx].targets[i]) {
+                    Some(j) => self.messages[available_messages[j]].timestamp.elapsed().as_micros(),
+                    None => u128::MAX,
+                }
+            }).max().unwrap_or(u128::MAX)
     }
 
-    pub fn chain_payloads(&self, messages: &Vec<usize>) -> Vec<u8> {
+    pub fn chain_payloads(&self, messages: &Vec<usize>) -> Vec<UdpPayload> {
         messages
             .iter()
             .map(|&i| self.messages[i].to_payload())
-            .flatten()
             .collect()
     }
 
-    pub fn try_closures(&mut self) {
+    pub fn run_task(&mut self, idx: usize, payload: Vec<UdpPayload>) {
+        let micros = self.tasks[idx].timestamp.elapsed().as_micros() as u64;
+        let output = self.tasks[idx].execute(payload).unwrap();
+        if output.len() > 0 {
+            self.tx_task_payload(idx, output, micros);
+        }
+    }
+
+    pub fn try_tasks(&mut self, last_msg: usize) {
+
         let available_messages = (0..self.messages.len())
             .filter(|&i| self.messages[i].is_available())
             .collect();
-        (0..self.closures.len()).for_each(|i| {
-            if self.closure_available(i, &available_messages) {
-                let mut output = vec![];
 
-                let payload = self.chain_payloads(&self.closures[i].targets);
-                self.closures[i].execute(payload, &mut output).unwrap();
-
-                if output.len() > 0 {
-                    self.tx_payload(output);
-                }
+        (0..self.tasks.len()).for_each(|i| {
+            if self.tasks[i].targets.len() == 0 && 
+                self.tasks[i].timestamp.elapsed().as_micros() > self.messages[last_msg].timestamp.elapsed().as_micros() {
+                self.run_task(i, vec![self.messages[last_msg].to_payload()]);
             }
-        })
+            else if self.task_available(i, &available_messages) {
+                // self.log(self.tasks[i].timestamp.elapsed().as_micros());
+                self.run_task(i, self.chain_payloads(&self.tasks[i].targets));
+            }
+        });
     }
 
     pub fn spin(&mut self) {
-        while self.lifetime.elapsed().as_secs() < 5 {
+        while !*self.shutdown.read().unwrap() {
             let t = Instant::now();
             let mut buffer = [0u8; UDP_PACKET_SIZE];
+
             match self.try_rx(&mut buffer) {
-                Some(_) => {
-                    self.try_closures();
+                Some(i) => {
+                    self.try_tasks(i);
                 }
                 _ => {}
             };
@@ -331,8 +352,9 @@ impl Sock {
             while t.elapsed().as_micros() < SOCK_IO_LIMIT {}
         }
     }
+    
 
-    pub fn log<T: std::fmt::Debug>(&self, message: T) {
+    pub fn log<M: std::fmt::Debug>(&self, message: M) {
         println!(
             "[{:?}]: {:?}\n\tPackets Tx/Rx <{},{}>\n\tInfo: {:?}\n\tLifetime: {}s",
             self.name,
@@ -344,7 +366,7 @@ impl Sock {
         );
     }
 
-    pub fn log_heavy<T: std::fmt::Debug>(&self, message: T) {
+    pub fn log_heavy<M: std::fmt::Debug>(&self, message: M) {
         println!(
             "\n==[Sock]==\n[{:?}]: {:?}\n\tPackets Tx/Rx <{},{}>\n\tInfo: {:?}\n\tTargets: {:?} ({})\n\tRates: {:?} Hz\n\tActivity: {}s\n\tLifetime: {}s",
             self.name,

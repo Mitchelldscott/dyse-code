@@ -24,6 +24,7 @@ pub struct HidWriter {
     output: ByteBuffer,
     teensy: HidDevice,
     layer: HidLayer,
+    sock: Sock,
     timestamp: Instant,
 }
 
@@ -34,6 +35,7 @@ impl HidWriter {
             output: ByteBuffer::hid(),
             teensy: layer.wait_for_device(),
             layer: layer,
+            sock: Sock::relay("rid/tx"),
             timestamp: Instant::now(),
         }
     }
@@ -126,10 +128,17 @@ impl HidWriter {
         while !self.layer.control_flags.is_shutdown() {
             let t = Instant::now();
 
-            self.output = self
-                .writer_rx
-                .try_recv()
-                .unwrap_or(self.silent_channel_default());
+            let mut buffer = [0u8; UDP_PACKET_SIZE];
+            
+            match self.try_rx(&mut buffer)
+                Some(_) => {
+                    self.sock.messages[0].to_payload();
+                },
+                _ => {
+                    self.silent_channel_default();
+                },
+            }
+            
 
             self.output
                 .put_float(60, 1E-3 * (lifetime.elapsed().as_micros() as f64));
@@ -137,14 +146,6 @@ impl HidWriter {
             self.write();
 
             self.layer.delay(t);
-            // t = Instant::now(); // try double delay
-            // self.layer.delay(t);
-            // if t.elapsed().as_micros() > 550 {
-            //     println!(
-            //         "HID Writer over cycled {}ms",
-            //         1E-3 * (t.elapsed().as_micros() as f64)
-            //     );
-            // }
         }
 
         self.send_report(13, &vec![255; 63]);

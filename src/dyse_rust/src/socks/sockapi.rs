@@ -10,91 +10,105 @@
  *
  *
  ********************************************************************************/
-use std::thread::{Builder, JoinHandle};
+// use std::thread::{Builder, JoinHandle};
 
-use crate::socks::socks::*;
+use crate::{
+    build_fn,
+    socks::{
+        socks::*,
+        message::UdpPayload,
+    },
+};
+use std::{
+    time::Instant,
+    fmt::Debug
+};
 
-pub struct SockApi {}
+#[macro_export]
+macro_rules! sync {
+    ($name:expr, $target_names:expr, $task_name:expr, $default_context:expr, |$context:ident: $U:ty, $($target:ident: $T:ty),+| $body:expr) => (
+        Sock::synced($name, $target_names, $task_name, $default_context,  build_fn!(|$context: $U, $($target: $T),+| $body))
+    );
+    ($name:expr, $target_names:expr, $task_name:expr, $default_context:expr,  |$context:ident: $U:ty, $t:ident, $($target:ident: $T:ty),+| $body:expr) => (
+        Sock::synced($name, $target_names, $task_name, $default_context, build_fn!(|$context: $U, $t, $($target: $T),+| $body))
+    );
+}
 
-impl SockApi {
-    pub fn sender(name: &str) -> Sock {
-        Sock::new(name, vec![])
-    }
+#[macro_export]
+macro_rules! unsync {
+    ($name:expr, $target_names:expr, $task_name:expr, $default_context:expr, |$context:ident: $U:ty, $($target:ident: $T:ty),+| $body:expr) => (
+        Sock::unsynced($name, $target_names, $task_name, $default_context,  build_fn!(|$context: $U, $($target: $T),+| $body))
+    );
+    ($name:expr, $target_names:expr, $task_name:expr, $default_context:expr,  |$context:ident: $U:ty, $t:ident, $($target:ident: $T:ty),+| $body:expr) => (
+        Sock::unsynced($name, $target_names, $task_name, $default_context, build_fn!(|$context: $U, $t, $($target: $T),+| $body))
+    );
+}
 
-    pub fn receiver(name: &str, targets: Vec<String>) {
-        let mut sock = Sock::new(name, targets);
-        sock.spin();
-    }
+#[macro_export]
+macro_rules! add_task {
+    ($sock:expr, $target_name:expr, $task_name:expr, $default_context:expr,  |$context:ident: $U:ty, $($target:ident: $T:ty),+| $body:expr) => (
+        $sock.link_task($task_name, $target_name, $default_context, build_fn!(|$context: $U, $($target: $T),+| $body));
+    );
 
-    pub fn relay(name: &str, targets: &Vec<String>, callback: SockClosureFn) -> Sock {
-        let mut sock = Sock::new(name, vec![]);
-        sock.link_closure(targets, callback);
-        sock
-    }
+    ($sock:expr, $target_name:expr, $task_name:expr, $default_context:expr,  |$context:ident: $U:ty, $t:ident, $($target:ident: $T:ty),+| $body:expr) => (
+        $sock.link_task($task_name, $target_name, $default_context, build_fn!(|$context: $U, $t, $($target: $T),+| $body));
+    );
+}
 
-    pub fn hub(name: &str, targets: Vec<Vec<String>>, callbacks: Vec<SockClosureFn>) -> Sock {
-        let mut sock = Sock::new(name, vec![]);
-        (0..targets.len()).for_each(|i| sock.link_closure(&targets[i], callbacks[i]));
-        sock
-    }
 
-    pub fn relay_thread(
-        name: String,
-        names: &Vec<String>,
-        callback: SockClosureFn,
-    ) -> JoinHandle<()> {
-        let mut sock = SockApi::relay(&name, names, callback);
+///
+///
+///
+///     Nice for figuring things out
+///
+///
+///
+///
 
-        Builder::new()
-            .name(name)
-            .spawn(move || {
-                sock.spin();
-                sock.log_heavy("exiting");
-            })
-            .unwrap()
-    }
+pub fn shutdown() {
+    let mut sock = Sock::source("shutdown");
+    sock.tx_payload(0);
+    sock.tx_payload(0);
+    sock.tx_payload(0);
+    sock.tx_payload(0);
+    let t = Instant::now();
+    while t.elapsed().as_secs() < 1 {}
+    sock.tx_payload(0);
+    sock.tx_payload(0);
+    sock.tx_payload(0);
+    sock.tx_payload(0);
+}
 
-    pub fn hub_thread(
-        name: String,
-        names: Vec<Vec<String>>,
-        callbacks: Vec<SockClosureFn>,
-    ) -> JoinHandle<()> {
-        let mut sock = SockApi::hub(&name, names, callbacks);
+pub fn sync_echo<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(name: &str, targets: Vec<&str>) {
 
-        Builder::new()
-            .name(name)
-            .spawn(move || {
-                sock.spin();
-                sock.log_heavy("exiting");
-            })
-            .unwrap()
-    }
+    let mut sock = Sock::synced("echo", targets, name, 0, |data: Vec<UdpPayload>, _ctx: &mut UdpPayload, t: f64| {
+        let payloads: Vec<T> = data.iter().map(|task_in| bincode::deserialize::<T>(&task_in).expect("Failed to deserialize input")).collect();
+        println!("[{t:.6}] {payloads:?}");
+        (0, vec![])
+    });
 
-    pub fn echo(names: &Vec<String>) {
-        let mut sock = SockApi::relay("echo-sock", names, |data, _, _| {
-            println!("{data:?}");
-            0
-        });
+    sock.spin();
+}
 
-        sock.spin();
-        sock.log_heavy("exiting");
-    }
+pub fn echo<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(name: &str, targets: Vec<&str>) {
 
-    pub fn hz(names: &Vec<String>) {
-        let mut sock = SockApi::relay("hz-sock", names, move |_, _, ts| {
-            println!("{:.3} Hz", 1.0 / ts);
-            0
-        });
+    let mut sock = Sock::unsynced("echo", targets, name, 0, |data: Vec<UdpPayload>, _ctx: &mut UdpPayload, t: f64| {
+        let payloads: Vec<T> = data.iter().map(|task_in| bincode::deserialize::<T>(&task_in).expect("Failed to deserialize input")).collect();
+        println!("[{t:.6}] {payloads:?}");
+        (0, vec![])
+    });
 
-        sock.spin();
-        sock.log_heavy("exiting");
-    }
+    sock.spin();
+}
 
-    // pub fn shutdown_socks() {
-    //     let mut sock = Sockage::client("kill-sock");
-    //     let mut buffer = SockBuffer::stamp_packet(&sock);
+pub fn hz<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(name: &str, targets: Vec<&str>) {
+    
+    let mut sock = Sock::synced("hz", targets, name, 0.0f64, |_data: Vec<UdpPayload>, ctx: &mut UdpPayload, t: f64| {
+        let t1: f64 = bincode::deserialize(ctx).unwrap();
+        *ctx = bincode::serialize(&t).unwrap();
+        println!("[{t:.6}] {:.4}", 1.0 / (t - t1));
+        (0, vec![])
+    });
 
-    //     buffer[0] = 13;
-    //     sock.send_to(buffer, sock_uri!(1313));
-    // }
+    sock.spin();
 }

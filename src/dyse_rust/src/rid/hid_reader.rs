@@ -13,8 +13,10 @@
 
 extern crate hidapi;
 
-use crate::rid::hid_layer::*;
-use crate::utilities::data_structures::*;
+use crate::{
+    rid::hid_layer::*,
+    utilities::data_structures::*,
+};
 
 use hidapi::HidDevice;
 use std::{sync::mpsc::Sender, time::Instant};
@@ -26,6 +28,7 @@ pub struct HidReader {
     input: ByteBuffer,
     teensy: HidDevice,
     layer: HidLayer,
+    sock: Sock,
     timestamp: Instant,
 }
 
@@ -36,6 +39,7 @@ impl HidReader {
             input: ByteBuffer::hid(),
             teensy: layer.wait_for_device(),
             layer: layer,
+            sock: Sock::source("rid/rx")
             timestamp: Instant::now(),
         }
     }
@@ -81,43 +85,36 @@ impl HidReader {
     /// ```
     pub fn read(&mut self) -> usize {
         // let t = Instant::now();
-        match &self.teensy.read(&mut self.input.data) {
+        let mut buffer = [0; 64];
+        match &self.teensy.read(&mut buffer) {
             Ok(value) => {
-                // reset watchdog... woof
-                // println!("Read time: {}", t.elapsed().as_micros());
                 if *value == 64 {
                     self.layer.pc_stats.update_packets_read(1.0);
                     self.timestamp = Instant::now();
+                    self.sock.tx_payload(buffer);
                 }
 
-                return *value;
+                *value
             }
             _ => {
-                // println!("No packet available");
-                // *self.shutdown.write().unwrap() = true;
-                // self.layer.control_flags.disconnect();
                 self.layer.control_flags.initialize(false);
                 self.reconnect();
+                0
             }
         }
-        return 0;
     }
 
     /// After requesting a report this can be used to wait for a reply
     ///
-    /// # Panics
-    ///
-    /// This will panic if a reply is not received from the Teensy
-    /// within `timeout` ms.
     ///
     /// # Usage
     ///
     /// ```
     /// // set writer.output.data[0] to an int [1-3] (255 for initializer)
     /// writer.write();
-    /// reader.wait_for_report_reply(255, 10);
+    /// reader.wait_for_reply(255, 10);
     /// ```
-    pub fn wait_for_report_reply(&mut self, packet_id: u8, timeout: u128) {
+    pub fn wait_for_reply(&mut self, packet_id: u8, timeout: u128) {
         let wait_timer = Instant::now();
 
         while wait_timer.elapsed().as_millis() < timeout {
@@ -131,8 +128,6 @@ impl HidReader {
                 _ => {}
             }
 
-            // HID runs at 1 ms
-            // self.layer.loop_delay(loopt);
         }
 
         // If packet never arrives
@@ -141,42 +136,29 @@ impl HidReader {
     }
 
     /// Main function to spin and connect the teensys
-    /// input to ROS.
+    /// input to Socks.
     ///
     /// # Usage
     /// ```
     /// use hidapi::HidApi;
-    /// use dyse_rust::hid_comms::dyse_hid::HidReader;
+    /// use dyse_rust::rid::HidReader;
     ///
     /// let mut hidapi = HidApi::new().expect("Failed to create API instance");
     /// let mut reader = HidReader::new(&mut hidapi, vid, pid);
     /// reader.spin();       // runs until watchdog times out
     /// ```
     pub fn spin(&mut self) {
-        self.wait_for_report_reply(255, 100);
+        self.wait_for_reply(255, 100);
 
         while !self.layer.control_flags.is_shutdown() {
             let loopt = Instant::now();
 
-            match self.read() {
-                64 => {
-                    // self.layer.report_parser(&self.input);
-                    self.parser_tx.send(self.input.clone()).unwrap();
-                }
-
-                _ => {}
-            }
+            self.read();
 
             self.layer.delay(loopt);
-            // if loopt.elapsed().as_micros() > 550 {
-            //     println!(
-            //         "HID Reader over cycled {}ms",
-            //         1E-3 * (loopt.elapsed().as_micros() as f64)
-            //     );
-            // }
         }
 
-        self.wait_for_report_reply(255, 100);
+        self.wait_for_reply(255, 100);
     }
 
     /// Sends robot status report packet to [HidROS], waits for the reply packet,

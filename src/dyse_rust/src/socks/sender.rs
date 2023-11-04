@@ -11,7 +11,7 @@
  *
  ********************************************************************************/
 
-use dyse_rust::socks::sockapi::*;
+use dyse_rust::socks::socks::*;
 use std::env;
 
 fn main() {
@@ -21,8 +21,8 @@ fn main() {
     let name = args[0].clone();
     args.remove(0);
 
-    let data = args.iter().map(|arg| arg.parse::<u8>().unwrap()).collect();
+    let data: Vec<f64> = args.iter().map(|arg| arg.parse::<f64>().unwrap()).collect();
 
-    let mut sock = SockApi::sender(&name);
+    let mut sock = Sock::source(&name);
     sock.tx_payload(data);
 }
