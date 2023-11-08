@@ -21,14 +21,11 @@ use crate::{
 use hidapi::HidDevice;
 use std::{sync::mpsc::Sender, time::Instant};
 
-/// Responsible for initializing [RobotStatus] and continuously
-/// sending status reports
+/// Reads from an Hid Device and send the packets through a channel
 pub struct HidReader {
-    parser_tx: Sender<ByteBuffer>,
-    input: ByteBuffer,
+    parser_tx: Sender<HidPacket>,
     teensy: HidDevice,
     layer: HidLayer,
-    sock: Sock,
     timestamp: Instant,
 }
 
@@ -36,10 +33,8 @@ impl HidReader {
     pub fn new(layer: HidLayer, parser_tx: Sender<ByteBuffer>) -> HidReader {
         HidReader {
             parser_tx: parser_tx,
-            input: ByteBuffer::hid(),
             teensy: layer.wait_for_device(),
             layer: layer,
-            sock: Sock::source("rid/rx")
             timestamp: Instant::now(),
         }
     }
@@ -51,10 +46,6 @@ impl HidReader {
             self.layer.mcu_stats.lifetime(),
         );
         self.input.print();
-    }
-
-    pub fn buffer(&self) -> ByteBuffer {
-        self.input.clone()
     }
 
     pub fn reconnect(&mut self) {
@@ -84,14 +75,18 @@ impl HidReader {
     /// }
     /// ```
     pub fn read(&mut self) -> usize {
-        // let t = Instant::now();
-        let mut buffer = [0; 64];
+        let mut buffer = [0; HID_PACKET_SIZE];
         match &self.teensy.read(&mut buffer) {
             Ok(value) => {
-                if *value == 64 {
-                    self.layer.pc_stats.update_packets_read(1.0);
+                if *value == HID_PACKET_SIZE {
+
+                    match self.parser_tx.send(buffer) {
+                        Ok(_) => {},
+                        _ => self.layer.control_flags.shutdown(),
+                    };
+
                     self.timestamp = Instant::now();
-                    self.sock.tx_payload(buffer);
+                    self.layer.pc_stats.update_packets_read(1.0);
                 }
 
                 *value
@@ -140,12 +135,6 @@ impl HidReader {
     ///
     /// # Usage
     /// ```
-    /// use hidapi::HidApi;
-    /// use dyse_rust::rid::HidReader;
-    ///
-    /// let mut hidapi = HidApi::new().expect("Failed to create API instance");
-    /// let mut reader = HidReader::new(&mut hidapi, vid, pid);
-    /// reader.spin();       // runs until watchdog times out
     /// ```
     pub fn spin(&mut self) {
         self.wait_for_reply(255, 100);
@@ -161,12 +150,6 @@ impl HidReader {
         self.wait_for_reply(255, 100);
     }
 
-    /// Sends robot status report packet to [HidROS], waits for the reply packet,
-    /// then calls [HidReader::spin] to begin parsing reports
-    ///
-    /// # Example
-    ///
-    /// see [HidLayer::pipeline()]
     pub fn pipeline(&mut self) {
         println!("[HID-reader]: Live");
 

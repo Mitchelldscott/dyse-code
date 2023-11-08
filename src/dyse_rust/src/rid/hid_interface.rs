@@ -29,13 +29,29 @@ pub static TEENSY_CYCLE_TIME_ER: f64 = TEENSY_CYCLE_TIME_US + 50.0; // err thres
 pub static TEENSY_DEFAULT_VID: u16 = 0x16C0;
 pub static TEENSY_DEFAULT_PID: u16 = 0x0486;
 
+pub fn get_latch_packet(i: u8, latch: u8, data: &Vec<f64>) -> ByteBuffer {
+    let mut buffer = ByteBuffer::hid();
+    buffer.puts(0, &vec![TASK_CONTROL_ID, i, latch, data.len() as u8]);
+    buffer.put_floats(4, data);
+    buffer
+}
+
+pub fn disable_latch(i: u8) -> ByteBuffer {
+    get_latch_packet(i, 0, &vec![])
+}
+
+pub fn output_latch(i: u8, data: &Vec<f64>) -> ByteBuffer {
+    get_latch_packet(i, 1, data)
+}
+
+pub fn input_latch(i: u8, data: &Vec<f64>) -> ByteBuffer {
+    get_latch_packet(i, 2, data)
+}
+
 pub struct HidInterface {
     pub layer: HidLayer,
 
-    pub current_request: u8,
-
     // For sending reports to the writer
-    pub writer_tx: crossbeam_channel::Sender<ByteBuffer>,
     pub parser_rx: mpsc::Receiver<ByteBuffer>,
 
     // For storing reply data
@@ -55,12 +71,7 @@ impl HidInterface {
         (
             HidInterface {
                 layer: layer.clone(),
-
-                current_request: 0,
-
-                writer_tx: writer_tx.clone(),
                 parser_rx: parser_rx,
-
                 robot_fw: RobotFirmware::default(writer_tx),
             },
             HidReader::new(layer.clone(), parser_tx),
@@ -70,27 +81,18 @@ impl HidInterface {
 
     pub fn sim() -> HidInterface {
         let layer = HidLayer::new(TEENSY_DEFAULT_VID, TEENSY_DEFAULT_PID, TEENSY_CYCLE_TIME_US);
-        let (writer_tx, _): (
+        let (writer_tx, _writer_rx): (
             crossbeam_channel::Sender<ByteBuffer>,
             crossbeam_channel::Receiver<ByteBuffer>,
         ) = crossbeam_channel::bounded(100);
-        let (_, parser_rx): (mpsc::Sender<ByteBuffer>, mpsc::Receiver<ByteBuffer>) =
+        let (_parser_tx, parser_rx): (mpsc::Sender<ByteBuffer>, mpsc::Receiver<ByteBuffer>) =
             mpsc::channel();
 
         HidInterface {
             layer: layer.clone(),
-
-            current_request: 0,
-
-            writer_tx: writer_tx.clone(),
             parser_rx: parser_rx,
-
             robot_fw: RobotFirmware::default(writer_tx),
         }
-    }
-
-    pub fn writer_tx(&self, report: ByteBuffer) {
-        self.writer_tx.send(report).unwrap();
     }
 
     pub fn check_feedback(&mut self) {
@@ -137,11 +139,9 @@ impl HidInterface {
 
     pub fn print(&self) {
         self.layer.print();
-        self.robot_fw.print();
     }
 
     pub fn pipeline(&mut self, _unused_flag: bool) {
-        self.send_initializers();
         while !self.layer.control_flags.is_connected() {}
 
         println!("[HID-Control]: Live");
@@ -158,6 +158,7 @@ impl HidInterface {
                 self.layer.control_flags.initialize(true);
                 self.send_initializers();
             } else {
+                
                 self.check_feedback();
 
                 if t.elapsed().as_secs() >= 20 {
@@ -167,9 +168,6 @@ impl HidInterface {
             }
 
             self.layer.loop_delay(loopt);
-            // if t.elapsed().as_micros() as f64 > TEENSY_CYCLE_TIME_US {
-            //     println!("HID Control over cycled {} ms", (t.elapsed().as_micros() as f64) * 1E-3);
-            // }
         }
 
         self.layer.control_flags.shutdown();

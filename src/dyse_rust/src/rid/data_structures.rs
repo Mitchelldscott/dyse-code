@@ -13,6 +13,11 @@
 
 use std::sync::{Arc, RwLock};
 
+pub const HID_PACKET_SIZE: usize = 64;
+pub const TIMESTAMP_OFFSET: usize = 60;
+
+pub type HidPacket = [u8; HidPacketLength];
+
 #[derive(Clone)]
 pub struct HidStats {
     lifetime: Arc<RwLock<f64>>,

@@ -117,25 +117,6 @@ pub fn get_task_initializers(
         .collect()
 }
 
-pub fn get_latch_packet(i: u8, latch: u8, data: &Vec<f64>) -> ByteBuffer {
-    let mut buffer = ByteBuffer::hid();
-    buffer.puts(0, &vec![TASK_CONTROL_ID, i, latch, data.len() as u8]);
-    buffer.put_floats(4, data);
-    buffer
-}
-
-pub fn disable_latch(i: u8) -> ByteBuffer {
-    get_latch_packet(i, 0, &vec![])
-}
-
-pub fn output_latch(i: u8, data: &Vec<f64>) -> ByteBuffer {
-    get_latch_packet(i, 1, data)
-}
-
-pub fn input_latch(i: u8, data: &Vec<f64>) -> ByteBuffer {
-    get_latch_packet(i, 2, data)
-}
-
 pub struct EmbeddedTask {
     pub rate: f64,
     pub latch: u16,
@@ -220,9 +201,15 @@ impl EmbeddedTask {
     }
 }
 
+pub struct TaskParams {
+    task: usize,
+    params: Vec<f64>,
+}
+
 pub struct RobotFirmware {
     pub configured: Vec<bool>,
     pub tasks: Vec<EmbeddedTask>,
+    pub params: crossbeam_channel::Receiver<TaskParams>,
     pub latch_handles: Vec<JoinHandle<()>>,
     pub config_handles: Vec<JoinHandle<()>>,
 }
@@ -230,7 +217,7 @@ pub struct RobotFirmware {
 impl RobotFirmware {
     pub fn from_byu(
         byu: BuffYamlUtil,
-        writer_tx: crossbeam_channel::Sender<ByteBuffer>,
+        writer_tx: crossbeam_channel::Sender<HidPacket>,
     ) -> RobotFirmware {
         let tasks: Vec<EmbeddedTask> = byu
             .data()
@@ -255,48 +242,12 @@ impl RobotFirmware {
             config_handles: vec![],
         };
 
-        let mut sock = Sock::relay("Firmware/",)
+        let task_config_topics = (0..tasks.len()).map(|i| format!("{}/params", tasks[i].name)).collect();
 
-        rfw.latch_handles = (0..rfw.tasks.len())
-            .map(|i| {
-                let id = i as u8;
-                let writer_clone = writer_tx.clone();
-                Sock::thread(
-                    format!("{}/lio", &rfw.tasks[i].name),
-                    vec![format!("{}/latch", rfw.tasks[i].name)],
-                    move |sock: &mut Sockage, _: &Vec<String>| match writer_clone
-                        .send(input_latch(id, &sock.data[0]))
-                    {
-                        Ok(_) => {}
-                        _ => sock.shutdown(true),
-                    },
-                )
-            })
-            .collect();
+        let mut sock = Sock::unsynced("robot_fw", task_config_topics, "", 0, |data: Vec<UdpPayload>, _ctx: &mut UdpPayload, t: f64| {
+            (0, data[0])
+        });
 
-        rfw.config_handles = (0..rfw.tasks.len())
-            .map(|i| {
-                let id = i as u8;
-                let rate = rfw.tasks[i].rate;
-                let driver = rfw.tasks[i].driver();
-                let input_ids = rfw.input_task_ids(&rfw.tasks[i].input_names);
-                let writer_clone = writer_tx.clone();
-                Sockage::thread(
-                    format!("{}/cio", &rfw.tasks[i].name),
-                    vec![format!("{}/config", rfw.tasks[i].name)],
-                    move |sock: &mut Sockage, _: &Vec<String>| {
-                        get_task_initializers(id, rate, &driver, &sock.data[0], &input_ids)
-                            .into_iter()
-                            .for_each(|packet| match writer_clone.send(packet) {
-                                Ok(_) => {}
-                                _ => sock.shutdown(true),
-                            });
-                    },
-                )
-            })
-            .collect();
-
-        rfw
     }
 
     pub fn default(writer_tx: crossbeam_channel::Sender<ByteBuffer>) -> RobotFirmware {

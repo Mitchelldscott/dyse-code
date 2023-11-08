@@ -257,6 +257,13 @@ impl Sock {
         });
     }
 
+    pub fn tx_any_payload(&mut self, name: &str, payload: Vec<u8>, micros: u64) {
+        let msg = Message::from_payload(payload);
+        msg.packets(self.header_bytes(name, micros)).iter().for_each(|buffer| {
+            self.tx(*buffer, MULTICAST_URI);
+        });
+    }
+
     pub fn collect(
         &mut self,
         idx: usize,
@@ -311,12 +318,9 @@ impl Sock {
             .collect()
     }
 
-    pub fn run_task(&mut self, idx: usize, payload: Vec<UdpPayload>) {
+    pub fn run_task(&mut self, idx: usize, payload: Vec<UdpPayload>) -> UdpPayload {
         let micros = self.tasks[idx].timestamp.elapsed().as_micros() as u64;
-        let output = self.tasks[idx].execute(payload).unwrap();
-        if output.len() > 0 {
-            self.tx_task_payload(idx, output, micros);
-        }
+        self.tasks[idx].execute(payload).unwrap()
     }
 
     pub fn try_tasks(&mut self, last_msg: usize) {
@@ -328,11 +332,16 @@ impl Sock {
         (0..self.tasks.len()).for_each(|i| {
             if self.tasks[i].targets.len() == 0 && 
                 self.tasks[i].timestamp.elapsed().as_micros() > self.messages[last_msg].timestamp.elapsed().as_micros() {
-                self.run_task(i, vec![self.messages[last_msg].to_payload()]);
+                let output = self.run_task(i, vec![self.messages[last_msg].to_payload()]);
+                if output.len() > 0 {
+                    self.tx_task_payload(idx, output, micros);
+                }
             }
             else if self.task_available(i, &available_messages) {
-                // self.log(self.tasks[i].timestamp.elapsed().as_micros());
-                self.run_task(i, self.chain_payloads(&self.tasks[i].targets));
+                let output = self.run_task(i, self.chain_payloads(&self.tasks[i].targets));
+                if output.len() > 0 {
+                    self.tx_task_payload(idx, output, micros);
+                }
             }
         });
     }
