@@ -122,7 +122,7 @@ impl Message {
         Message {
             fragments: vec![],
             timestamp: Instant::now(),
-            micros_rate: 0,
+            micros_rate: u64::MAX,
             ntx: 0,
         }
     }
@@ -146,7 +146,7 @@ impl Message {
         Message {
             fragments: fragments,
             timestamp: Instant::now(),
-            micros_rate: 0,
+            micros_rate: u64::MAX,
             ntx: 0,
         }
     }
@@ -158,21 +158,25 @@ impl Message {
     }
 
     pub fn init_fragments(&mut self, n: usize) {
-        self.fragments = (0..n).map(|_| MessageFragment::new(255, n)).collect();
+        match self.fragments.len() > 0 {
+            true => (0..self.fragments.len()).for_each(|i| self.fragments[i].offset = 255),
+            false => self.fragments = (0..n).map(|_| MessageFragment::new(255, n)).collect(),
+        };
     }
 
     pub fn is_available(&self) -> bool {
-        (self.micros_rate / 2) as u128 > self.timestamp.elapsed().as_micros()
+        (self.micros_rate / 2) as u128 > self.timestamp.elapsed().as_micros() && self.micros_rate != u64::MAX
     }
 
     pub fn collect(&mut self, ntx: i64, micros: u64, fragment: MessageFragment) -> bool {
-        if self.fragments.len() == 0 || ntx > self.ntx || micros > 2 * self.micros_rate {
+        if self.fragments.len() == 0 || ntx > self.ntx {
             self.init_fragments(fragment.total_fragments);
         }
 
         self.ntx = ntx;
         self.micros_rate = micros;
-        self.fragments[fragment.offset] = fragment.clone();
+        let offset = fragment.offset;
+        self.fragments[offset] = fragment;
 
         match (0..self.fragments.len()).find(|&i| self.fragments[i].offset != i) {
             Some(_) => false,

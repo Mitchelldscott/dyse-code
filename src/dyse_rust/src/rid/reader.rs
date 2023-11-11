@@ -12,14 +12,22 @@
  ********************************************************************************/
 
 extern crate hidapi;
+use hidapi::HidDevice;
 
 use crate::{
-    rid::hid_layer::*,
-    utilities::data_structures::*,
+    rid::{
+        layer::*,
+        data_structures::{
+            HidPacket,
+            HID_PACKET_SIZE,
+        },
+    },
 };
 
-use hidapi::HidDevice;
-use std::{sync::mpsc::Sender, time::Instant};
+use std::{
+    sync::mpsc::Sender, 
+    time::Instant
+};
 
 /// Reads from an Hid Device and send the packets through a channel
 pub struct HidReader {
@@ -30,7 +38,7 @@ pub struct HidReader {
 }
 
 impl HidReader {
-    pub fn new(layer: HidLayer, parser_tx: Sender<ByteBuffer>) -> HidReader {
+    pub fn new(layer: HidLayer, parser_tx: Sender<HidPacket>) -> HidReader {
         HidReader {
             parser_tx: parser_tx,
             teensy: layer.wait_for_device(),
@@ -45,7 +53,6 @@ impl HidReader {
             self.layer.pc_stats.lifetime(),
             self.layer.mcu_stats.lifetime(),
         );
-        self.input.print();
     }
 
     pub fn reconnect(&mut self) {
@@ -99,37 +106,6 @@ impl HidReader {
         }
     }
 
-    /// After requesting a report this can be used to wait for a reply
-    ///
-    ///
-    /// # Usage
-    ///
-    /// ```
-    /// // set writer.output.data[0] to an int [1-3] (255 for initializer)
-    /// writer.write();
-    /// reader.wait_for_reply(255, 10);
-    /// ```
-    pub fn wait_for_reply(&mut self, packet_id: u8, timeout: u128) {
-        let wait_timer = Instant::now();
-
-        while wait_timer.elapsed().as_millis() < timeout {
-            match self.read() {
-                64 => {
-                    if self.input.get(0) == packet_id {
-                        self.layer.control_flags.initialize(true);
-                        return;
-                    }
-                }
-                _ => {}
-            }
-
-        }
-
-        // If packet never arrives
-        self.layer.control_flags.shutdown();
-        println!("HID Reader timed out waiting for reply from Teensy");
-    }
-
     /// Main function to spin and connect the teensys
     /// input to Socks.
     ///
@@ -137,9 +113,9 @@ impl HidReader {
     /// ```
     /// ```
     pub fn spin(&mut self) {
-        self.wait_for_reply(255, 100);
 
         while !self.layer.control_flags.is_shutdown() {
+            
             let loopt = Instant::now();
 
             self.read();
@@ -147,7 +123,6 @@ impl HidReader {
             self.layer.delay(loopt);
         }
 
-        self.wait_for_reply(255, 100);
     }
 
     pub fn pipeline(&mut self) {

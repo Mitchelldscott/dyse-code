@@ -216,8 +216,8 @@ void overwrite_task_hid() {
 	TaskSetupPacket* task = new TaskSetupPacket;
 
 	task->packet_type = 2;
-	task->task_id = buffer.get<byte>(1);
-	task->latch = buffer.get<byte>(2);
+	task->latch = buffer.get<byte>(1);
+	task->task_id = buffer.get<byte>(2);
 	task->data_len = buffer.get<byte>(3);
 	task->data.reset(task->data_len);
 

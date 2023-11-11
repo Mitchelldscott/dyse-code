@@ -12,12 +12,23 @@
  ********************************************************************************/
 
 extern crate hidapi;
-
-use crate::{rid::hid_layer::*, utilities::data_structures::*};
-
-use crossbeam_channel::Receiver;
 use hidapi::HidDevice;
-use std::time::Instant;
+
+use crate::{
+    rid::{
+        layer::*,
+        data_structures::{
+            HidPacket,
+            HID_PACKET_SIZE,
+            HID_TIME_INDEX,
+        },
+    },
+};
+
+use std::{
+    sync::mpsc::Receiver, 
+    time::Instant
+};
 
 pub struct HidWriter {
     writer_rx: Receiver<HidPacket>,
@@ -42,7 +53,6 @@ impl HidWriter {
             self.timestamp.elapsed().as_micros(),
             self.layer.pc_stats.packets_sent(),
         );
-        self.output.print();
     }
 
     pub fn silent_channel_default(&mut self) -> HidPacket {
@@ -80,9 +90,8 @@ impl HidWriter {
     /// writer.write(buffer); // writes some_data to the teensy
     /// ```
     pub fn write(&mut self, buffer: HidPacket) {
-        (1E-3 * (lifetime.elapsed().as_micros() as f32)).to_be_bytes().iter().enumerate().for_each(|(i, b)| buffer[i + TIMESTAMP_OFFSET] = *b);
 
-        match self.teensy.write(buffer) {
+        match self.teensy.write(&buffer) {
             Ok(value) => {
                 self.timestamp = Instant::now();
                 if value == HID_PACKET_SIZE {
@@ -101,20 +110,25 @@ impl HidWriter {
     /// # Example
     /// See [`HidLayer::pipeline()`] source
     pub fn pipeline(&mut self) {
-        let lifetime = Instant::now();
+
         println!("[HID-writer]: Live");
+        
+        let lifetime = Instant::now();
 
         while !self.layer.control_flags.is_shutdown() {
+
             let t = Instant::now();
 
-            let mut buffer = self.writer_rx.try_recv(&mut buffer).unwrap_or(self.silent_channel_default());
+            let mut buffer = self.writer_rx.try_recv().unwrap_or(self.silent_channel_default());
+            (1E-6 * (lifetime.elapsed().as_micros() as f32)).to_be_bytes().iter().enumerate().for_each(|(i, &b)| buffer[i + HID_TIME_INDEX] = b);
 
             self.write(buffer);
 
             self.layer.delay(t);
         }
 
-        self.send_report(13, &vec![255; 63]);
+        let buffer = [13; HID_PACKET_SIZE];
+        self.write(buffer);
 
         println!("[HID-writer]: Shutdown");
     }

@@ -12,10 +12,15 @@
  ********************************************************************************/
 
 use crate::{
-    rid::{hid_layer::*, hid_reader::*, hid_writer::*, robot_firmware::*},
-    utilities::data_structures::*,
+    rid::{
+        layer::*, 
+        reader::*, 
+        writer::*, 
+        robot_firmware::*,
+        data_structures::*,
+    },
 };
-use std::{sync::mpsc, time::Instant};
+use std::{sync::mpsc::{channel, Sender, Receiver}, time::Instant};
 
 pub static MCU_NO_COMMS_TIMEOUT_S: u64 = 10;
 pub static MCU_NO_COMMS_RESET_MS: u128 = 10;
@@ -29,22 +34,25 @@ pub static TEENSY_CYCLE_TIME_ER: f64 = TEENSY_CYCLE_TIME_US + 50.0; // err thres
 pub static TEENSY_DEFAULT_VID: u16 = 0x16C0;
 pub static TEENSY_DEFAULT_PID: u16 = 0x0486;
 
-pub fn get_latch_packet(i: u8, latch: u8, data: &Vec<f64>) -> ByteBuffer {
-    let mut buffer = ByteBuffer::hid();
-    buffer.puts(0, &vec![TASK_CONTROL_ID, i, latch, data.len() as u8]);
-    buffer.put_floats(4, data);
+pub fn get_latch_packet(i: u8, latch: u8, data: &Vec<f64>) -> HidPacket {
+    let mut buffer = [0; HID_PACKET_SIZE];
+    buffer[HID_MODE_INDEX] = TASK_CONTROL_ID;
+    buffer[HID_TOGL_INDEX] = latch;
+    buffer[HID_TASK_INDEX] = i;
+    buffer[HID_DATA_INDEX] = data.len() as u8;
+    data.iter().enumerate().for_each(|(i, &x)| (x as f32).to_le_bytes().iter().enumerate().for_each(|(j, &b)| buffer[(4*i)+j] = b));
     buffer
 }
 
-pub fn disable_latch(i: u8) -> ByteBuffer {
+pub fn disable_latch(i: u8) -> HidPacket {
     get_latch_packet(i, 0, &vec![])
 }
 
-pub fn output_latch(i: u8, data: &Vec<f64>) -> ByteBuffer {
+pub fn output_latch(i: u8, data: &Vec<f64>) -> HidPacket {
     get_latch_packet(i, 1, data)
 }
 
-pub fn input_latch(i: u8, data: &Vec<f64>) -> ByteBuffer {
+pub fn input_latch(i: u8, data: &Vec<f64>) -> HidPacket {
     get_latch_packet(i, 2, data)
 }
 
@@ -52,7 +60,8 @@ pub struct HidInterface {
     pub layer: HidLayer,
 
     // For sending reports to the writer
-    pub parser_rx: mpsc::Receiver<ByteBuffer>,
+    pub reader_rx: Receiver<HidPacket>,
+    pub writer_tx: Sender<HidPacket>,
 
     // For storing reply data
     pub robot_fw: RobotFirmware,
@@ -61,42 +70,35 @@ pub struct HidInterface {
 impl HidInterface {
     pub fn new() -> (HidInterface, HidReader, HidWriter) {
         let layer = HidLayer::new(TEENSY_DEFAULT_VID, TEENSY_DEFAULT_PID, TEENSY_CYCLE_TIME_US);
-        let (writer_tx, writer_rx): (
-            crossbeam_channel::Sender<ByteBuffer>,
-            crossbeam_channel::Receiver<ByteBuffer>,
-        ) = crossbeam_channel::bounded(100);
-        let (parser_tx, parser_rx): (mpsc::Sender<ByteBuffer>, mpsc::Receiver<ByteBuffer>) =
-            mpsc::channel();
+        let (writer_tx, writer_rx) = channel::<HidPacket>();
+        let (reader_tx, reader_rx) = channel::<HidPacket>();
 
         (
             HidInterface {
                 layer: layer.clone(),
-                parser_rx: parser_rx,
-                robot_fw: RobotFirmware::default(writer_tx),
+                reader_rx: reader_rx,
+                writer_tx: writer_tx,
+                robot_fw: RobotFirmware::default(),
             },
-            HidReader::new(layer.clone(), parser_tx),
+            HidReader::new(layer.clone(), reader_tx),
             HidWriter::new(layer, writer_rx),
         )
     }
 
     pub fn sim() -> HidInterface {
-        let layer = HidLayer::new(TEENSY_DEFAULT_VID, TEENSY_DEFAULT_PID, TEENSY_CYCLE_TIME_US);
-        let (writer_tx, _writer_rx): (
-            crossbeam_channel::Sender<ByteBuffer>,
-            crossbeam_channel::Receiver<ByteBuffer>,
-        ) = crossbeam_channel::bounded(100);
-        let (_parser_tx, parser_rx): (mpsc::Sender<ByteBuffer>, mpsc::Receiver<ByteBuffer>) =
-            mpsc::channel();
+        let (hidui, _, _) = HidInterface::new();
+        hidui
+    }
 
-        HidInterface {
-            layer: layer.clone(),
-            parser_rx: parser_rx,
-            robot_fw: RobotFirmware::default(writer_tx),
-        }
+    pub fn writer_tx(&self, buffer: HidPacket) {
+        match self.writer_tx.send(buffer) {
+            Ok(_) => {},
+            _ => self.layer.control_flags.shutdown(),
+        };
     }
 
     pub fn check_feedback(&mut self) {
-        match self.parser_rx.try_recv() {
+        match self.reader_rx.try_recv() {
             Ok(report) => {
                 self.robot_fw
                     .parse_hid_feedback(report, &self.layer.mcu_stats);
@@ -106,9 +108,9 @@ impl HidInterface {
     }
 
     pub fn send_initializers(&self) {
-        self.robot_fw.task_init_packets().iter().for_each(|packet| {
+        self.robot_fw.task_init_packets().into_iter().for_each(|packet| {
             let t = Instant::now();
-            self.writer_tx(packet.clone());
+            self.writer_tx(packet);
             self.layer.delay(t);
         });
     }
@@ -116,15 +118,15 @@ impl HidInterface {
     pub fn try_config(&self) {
         self.robot_fw
             .task_param_packets()
-            .iter()
+            .into_iter()
             .for_each(|packet| {
                 println!(
                     "sending config for {} {}",
-                    packet.get(2),
+                    packet[2],
                     self.layer.pc_stats.lifetime()
                 );
                 let t = Instant::now();
-                self.writer_tx(packet.clone());
+                self.writer_tx(packet);
                 self.layer.delay(t);
             });
     }
@@ -139,6 +141,7 @@ impl HidInterface {
 
     pub fn print(&self) {
         self.layer.print();
+        self.robot_fw.print();
     }
 
     pub fn pipeline(&mut self, _unused_flag: bool) {

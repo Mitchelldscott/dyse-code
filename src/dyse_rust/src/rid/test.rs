@@ -19,10 +19,10 @@ use hidapi::{HidApi, HidDevice};
 
 use crate::{
     rid::{
-        data_structures::*, hid_interface::*, hid_layer::*, hid_reader::*, hid_writer::*,
+        data_structures::*, interface::*, layer::*, reader::*, writer::*,
         robot_firmware::*,
     },
-    socks::socks::*,
+    socks::sockapi,
     utilities::{data_structures::*, loaders::*},
 };
 
@@ -50,19 +50,14 @@ pub mod robot_fw {
 
     #[test]
     pub fn robot_fw_load() {
-        let (writer_tx, _): (
-            crossbeam_channel::Sender<ByteBuffer>,
-            crossbeam_channel::Receiver<ByteBuffer>,
-        ) = crossbeam_channel::bounded(100);
-
-        let rs = RobotFirmware::new("penguin", writer_tx);
+        let rs = RobotFirmware::new("penguin");
 
         rs.print();
 
         rs.task_init_packets().iter().for_each(|packet| {
             let mut total_items = 0;
             // packet.print();
-            packet.buffer().iter().for_each(|b| {
+            packet.iter().for_each(|b| {
                 if *b != 0 {
                     total_items += 1;
                 }
@@ -70,8 +65,7 @@ pub mod robot_fw {
 
             match total_items < 16 {
                 true => {
-                    println!("almost empty packet {total_items}");
-                    packet.print();
+                    println!("almost empty packet {total_items} {packet:?}");
                 }
                 false => {}
             };
@@ -150,9 +144,10 @@ pub mod dead_comms {
             let loopt = Instant::now();
 
             if interface.layer.control_flags.is_connected() {
-                let mut buffer = ByteBuffer::hid();
-                buffer.puts(0, &vec![255, 255]);
-                buffer.put_float(2, interface.layer.pc_stats.packets_sent());
+                let mut buffer = [0; HID_PACKET_SIZE];
+                buffer[HID_MODE_INDEX] = 255;
+                buffer[HID_TOGL_INDEX] = 255;
+                interface.layer.pc_stats.packets_sent().to_le_bytes().iter().enumerate().for_each(|(i, &b)| buffer[HID_TASK_INDEX+i] = b);
                 interface.writer_tx(buffer);
                 interface.check_feedback();
             }
@@ -262,11 +257,11 @@ pub mod live_comms {
 
         interface.layer.control_flags.shutdown();
         println!("[HID-Control]: shutdown");
-        interface.layer.print();
+        interface.print();
 
         let mut status = vec![false; interface.robot_fw.tasks.len()];
         (0..interface.robot_fw.tasks.len()).for_each(|i| {
-            match interface.robot_fw.configured[i] {
+            match interface.robot_fw.configured[i] && interface.robot_fw.tasks[i].pc_timestamp > (TEST_DURATION / 2) as f64 {
                 true => {}
                 false => {
                     status[i] = true;
@@ -314,28 +309,11 @@ pub mod live_comms {
         reader_handle.join().expect("[HID-Reader]: failed");
         interface_sim.join().expect("[HID-Control]: failed");
         writer_handle.join().expect("[HID-Writer]: failed");
+        sockapi::shutdown();
     }
 
     #[test]
-    pub fn core() {
-        let mut sock = Sockage::core("live_comms_core");
-
-        assert_eq!(
-            sock.socket.local_addr().unwrap(),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1313),
-            "Core Didn't bind to requested IP"
-        );
-
-        while sock.lifetime.elapsed().as_secs() < TEST_DURATION {
-            sock.core_parse();
-        }
-
-        sock.send_terminate();
-        sock.log_heavy();
-    }
-
-    #[test]
-    pub fn echo_node() {
-        Sockage::echo(vec!["signal".to_string()]);
+    pub fn demo_echo() {
+        sockapi::sync_echo::<Vec<f64>>("echo", vec!["lsm9ds1"]);
     }
 }

@@ -13,10 +13,16 @@
 
 use std::sync::{Arc, RwLock};
 
-pub const HID_PACKET_SIZE: usize = 64;
-pub const TIMESTAMP_OFFSET: usize = 60;
+pub const HID_PACKET_SIZE:  usize = 64;
 
-pub type HidPacket = [u8; HidPacketLength];
+pub const HID_MODE_INDEX:   usize = 0; // 255 = init data, 1 = overwrite data, 13 = kill
+pub const HID_TOGL_INDEX:   usize = 1; // init data: (1 = init task, 2 = config task) overwrite data: (latch)
+pub const HID_TASK_INDEX:   usize = 2; // only applies to init/overwrite data
+pub const HID_DATA_INDEX:   usize = 3; // data start
+pub const HID_TIME_INDEX:   usize = 60; // data start
+pub const HID_RUNT_INDEX:   usize = 60; // data start
+
+pub type HidPacket = [u8; HID_PACKET_SIZE];
 
 #[derive(Clone)]
 pub struct HidStats {

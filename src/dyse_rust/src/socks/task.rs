@@ -50,12 +50,12 @@ macro_rules! build_fn {
         |task_input: Vec<Vec<u8>>, task_context: &mut Vec<u8>, $time: f64| -> (usize, Vec<u8>) {
             let return_code = 0;
             #[allow(unused_mut)]
-            let mut $context: $U = bincode::deserialize(&task_context).expect("Failed to deserialize context");
-            let $target: Vec<$T> = task_input.iter().map(|task_in| bincode::deserialize::<$T>(&task_in).expect("Failed to deserialize input")).collect();
+            let mut $context: $U = bincode::deserialize(&task_context).expect("Failed to deserialize context (build_fn)");
+            let $target: Vec<$T> = task_input.iter().map(|task_in| bincode::deserialize::<$T>(&task_in).expect("Failed to deserialize input (build_fn)")).collect();
 
             let output = $body;
-            *task_context = bincode::serialize(&$context).expect("Failed to serialize context");
-            (return_code, bincode::serialize(&output).expect("Failed to serialize output"))
+            *task_context = bincode::serialize(&$context).expect("Failed to serialize context (build_fn)");
+            (return_code, bincode::serialize(&output).expect("Failed to serialize output (build_fn)"))
         }
     );
     (|$context:ident: $U:ty, $time:ident, $($target:ident: $T:ty),+| $body:expr) => (
@@ -63,15 +63,15 @@ macro_rules! build_fn {
             let mut _argc = 0;
             let return_code = 0;
             #[allow(unused_mut)]
-            let mut $context: $U = bincode::deserialize(&task_context).unwrap();
+            let mut $context: $U = bincode::deserialize(&task_context).expect("Failed to deserialize context (build_fn)");
             $(
-                let $target: $T = bincode::deserialize(&task_input[_argc]).unwrap();
+                let $target: $T = bincode::deserialize(&task_input[_argc]).expect("Failed to deserialize input (build_fn)");
                 _argc += 1;
             )+
 
             let output = $body;
-            *task_context = bincode::serialize(&$context).unwrap();
-            (return_code, bincode::serialize(&output).unwrap())
+            *task_context = bincode::serialize(&$context).expect("Failed to serialize context (build_fn)");
+            (return_code, bincode::serialize(&output).expect("Failed to serialize output (build_fn)"))
         }
     );
 }
@@ -121,6 +121,10 @@ impl Task {
             context: context,
             task: task,
         }
+    }
+
+    pub fn get_context<T: PartialEq + fmt::Debug + for<'a> serde::de::Deserialize<'a>>(&self) -> T {
+        bincode::deserialize(&self.context).expect("Failed to deserialize context (user)")
     }
 
     pub fn execute(&mut self, data: Vec<UdpPayload>) -> Result<UdpPayload, TaskError> {

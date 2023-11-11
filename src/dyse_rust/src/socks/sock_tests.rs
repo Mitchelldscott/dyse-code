@@ -37,29 +37,29 @@ use std::{
 pub mod high_sock {
     use super::*;
 
-    #[test]
-    pub fn demo_source() {
-        let lifetime = Instant::now();
-        let mut sock = Sock::source("source");
+    // #[test]
+    // pub fn demo_source() {
+    //     let lifetime = Instant::now();
+    //     let mut sock = Sock::source("signal1");
 
-        let mut i = 0.0f64;
-        while lifetime.elapsed().as_secs() < 5 {
-            let t = Instant::now();
-            sock.tx_payload(i);
-            i += 1.0;
-            while t.elapsed().as_millis() < 250 {}
-        }
+    //     let mut i = 0.0f64;
+    //     while lifetime.elapsed().as_secs() < 5 {
+    //         let t = Instant::now();
+    //         sock.tx_payload(i);
+    //         i += 1.0;
+    //         while t.elapsed().as_millis() < 10 {}
+    //     }
 
-        sock.log_heavy("");
-        sockapi::shutdown();
-    }
+    //     sock.log_heavy("");
+    //     sockapi::shutdown();
+    // }
 
     #[test]
     pub fn demo_hub() {
-        let mut sock = unsync!("hub", vec!["source"], "inv", 0, |_ctx: u8, data: f64| {
-            -data[0]
+        let mut sock = unsync!("hub", vec!["signal1", "sum"], "inverse", 0, |_ctx: u8, data: f64| {
+            0.001*data[0]
         });
-        add_task!(sock, vec![], "val", 0, |_ctx: u8, data: f64| {
+        add_task!(sock, vec![], "identity", 0, |_ctx: u8, data: f64| {
             data[0]
         });
         sock.spin();
@@ -68,24 +68,60 @@ pub mod high_sock {
 
     #[test]
     pub fn demo_relay() {
-        let mut sock = sync!("relay", vec!["val", "inv"], "sum", 2, |_ctx: u8, a: f64, b: f64| {
-            a + b
+        let mut sock = sync!("relay", vec!["identity", "inverse"], "sum", 10.0f64, |ctx: f64, a: f64, b: f64| {
+            ctx = (ctx + a + b) / 2.0;
+            ctx
         });
         sock.spin();
-        sock.log_heavy("");
-    }
-
-    #[test]
-    pub fn demo_hz() {
-        let t = Instant::now();
-        while t.elapsed().as_secs() < 3 {}
-        sockapi::hz::<f64>("demo/hz", vec!["sum", "val", "inv"]);
+        sock.log_heavy(sock.tasks[0].get_context::<f64>());
     }
 
     // #[test]
-    // pub fn demo_echo() {
-    //     sockapi::sync_echo::<f64>("demo/echo", vec!["sum", "val", "inv"]);
+    // pub fn demo_hz() {
+    //     let t = Instant::now();
+    //     while t.elapsed().as_secs() < 3 {}
+    //     sockapi::hz::<f64>("hz", vec!["sum"]);
     // }
+
+    #[test]
+    pub fn demo_echo() {
+        // let t = Instant::now();
+        // while t.elapsed().as_secs() < 3 {}
+        sockapi::sync_echo::<f64>("echo", vec!["sum"]);
+    }
+
+    #[test]
+    pub fn demo_sinc() {
+        let lifetime = Instant::now();
+        let mut sock = Sock::sinc("signal1", vec!["sum"]);
+        while lifetime.elapsed().as_millis() < 250 {}
+        sock.tx_payload(1.0f64);
+
+        let mut pub_rate = Instant::now();
+        let mut value = 0.0;
+
+        while lifetime.elapsed().as_secs() < 5 {
+            let t = Instant::now();
+            let mut buffer = [0u8; UDP_PACKET_SIZE];
+
+            match sock.try_rx(&mut buffer) {
+                Some(i) => {
+                    value = bincode::deserialize(&sock.messages[i].to_payload()).unwrap();
+                }
+                _ => {}
+            };
+
+            if pub_rate.elapsed().as_millis() > 1000 {
+                sock.tx_payload(value/2.0);
+                pub_rate = Instant::now();
+            }
+
+            while t.elapsed().as_millis() < SOCK_IO_LIMIT {}
+        }
+
+        sock.log_heavy("");
+        sockapi::shutdown();
+    }
 }
 
 #[cfg(test)]
