@@ -16,7 +16,8 @@
 
 float hid_errors = 0;
 
-float pc_lifetime = 0;
+float pc_time = 0;
+float mcu_time = 0;
 float pc_read_count = 0;
 float pc_write_count = 0;
 float mcu_read_count = 0;
@@ -30,76 +31,66 @@ CommsPipeline pipeline;
 
 void push_hid() {
 
-	if(!usb_rawhid_available()) {
-		// printf("RawHID not available %f\n", hid_watch_dogs.secs(1));
-		if (hid_watch_dog.secs() > 5) { // reset stats when no connection
-			reset_hid_stats();
-			hid_watch_dog.set();
+	if(usb_rawhid_available()) {
+		blink();										// only blink when connected to hid
+		hid_watch_dog.set();
+
+		switch (usb_rawhid_recv(buffer.buffer(), 0)) {
+			case 64:
+				mcu_read_count += 1;
+				// printf("Recieved Report %i, %i\n", buffer.get<byte>(0), buffer.get<byte>(1));
+				mcu_time = buffer.get<float>(52);
+				pc_time = buffer.get<float>(56);
+				
+				switch (buffer.get<byte>(0)) {
+					case 255:
+						switch (buffer.get<byte>(1)) {
+							case 1:
+								init_task_hid();
+								break;
+
+							case 2:
+								config_task_hid();
+								break;
+
+							default:
+
+								break;
+						}
+						break;
+
+					case 1:
+						overwrite_task_hid();
+						break;
+
+					case 13:
+						printf("kill switch received\n");
+						send_hid_status();
+						reset_hid_stats();
+						nuclear_option();
+						return;
+
+					default:
+						break;
+				}
+				break;
+			
+			default:
+				printf("No packet available\n");
+				// clear_feedback_pipeline();
+				break;
 		}
-		// printf("USB not available\n");
-		// clear_feedback_pipeline();
-		return;
+
+		if (pipeline.feedback.size() > 0) {
+			send_hid_feedback();
+		}
+		else {
+			send_hid_status();
+		}
 	}
-
-	hid_watch_dog.set();
-
-	switch (usb_rawhid_recv(buffer.buffer(), 0)) {
-		case 64:
-			blink();										// only blink when connected to hid
-			mcu_read_count += 1;
-			// printf("Recieved Report %i, %i\n", buffer.get<byte>(0), buffer.get<byte>(1));
-
-			switch (buffer.get<byte>(0)) {
-				case 255:
-					switch (buffer.get<byte>(1)) {
-						case 1:
-							init_task_hid();
-							send_hid_status();
-							return;
-
-						case 2:
-							config_task_hid();
-							send_hid_status();
-							return;
-
-						default:
-							break;
-					}
-					break;
-
-				case 1:
-					overwrite_task_hid();
-					break;
-
-				case 13:
-					printf("kill switch received\n");
-					send_hid_status();
-					reset_hid_stats();
-					nuclear_option();
-					return;
-
-				default:
-					break;
-			}
-			break;
-		
-		default:
-			printf("No packet available\n");
-			// clear_feedback_pipeline();
-			break;
-	}
-
-	// while (pipeline.feedback.size() > 0) {
-	// 	// printf("Feedback queue: %i %i\n", pipeline.feedback.size(), pipeline.feedback.len());
-	// 	send_hid_feedback();
-	// 	clear_feedback_pipeline();	
-	// }
-
-	if (pipeline.feedback.size() > 0) {
-		send_hid_feedback();
-	}
-	else {
-		send_hid_status();
+	else if (hid_watch_dog.secs() > 5) { // reset stats when no connection
+		reset_hid_stats();
+		hid_watch_dog.set();
 	}
 }
 
@@ -120,6 +111,7 @@ void send_hid_status() {
 	buffer.put<byte>(1, 255);
 	buffer.put<float>(2, mcu_write_count);
 	buffer.put<float>(6, mcu_read_count);
+
 	send_hid_with_timestamp();
 }
 
@@ -127,23 +119,22 @@ void send_hid_feedback() {
 	static int task_num = 0;
 
 	for (int i = 0; i < pipeline.feedback.size(); i++) {
+		// if (task_num == 1) {
+		// 		printf("update: %i config: %i\n", pipeline.feedback[task_num]->update, pipeline.feedback[task_num]->configured);
+		// 		pipeline.timestamp.print();
+		// }
 		if (pipeline.feedback[task_num]->update > 0) {
-
-			// if (task_num == 0) {
-			// 	printf("update: %i config: %i\n", pipeline.feedback[task_num]->update, pipeline.feedback[task_num]->configured);
-			// 	pipeline.timestamp.print();
-			// }
 			
 			pipeline.feedback[task_num]->update = 0;
 
 			buffer.put<byte>(0, 1);
-			buffer.put<byte>(1, pipeline.feedback[task_num]->task_id);
-			buffer.put<byte>(2, pipeline.feedback[task_num]->latch);
+			buffer.put<byte>(1, pipeline.feedback[task_num]->latch);
+			buffer.put<byte>(2, pipeline.feedback[task_num]->task_id);
 			
 			dump_vector(&pipeline.feedback[task_num]->output);
 			
-			buffer.put<float>(56, pipeline.feedback[task_num]->timestamp);
-						
+			buffer.put<float>(48, pipeline.feedback[task_num]->timestamp);
+			
 			send_hid_with_timestamp();
 			
 			task_num = (task_num + 1) % pipeline.feedback.size();
@@ -161,6 +152,8 @@ void send_hid_feedback() {
 }
 
 void send_hid_with_timestamp() {
+	buffer.put<float>(52, mcu_time);
+	buffer.put<float>(56, pc_time);
 	buffer.put<float>(60, pipeline.timestamp.total_seconds());
 	if (usb_rawhid_send(buffer.buffer(), 0) > 0) {
 		mcu_write_count += 1;
@@ -168,6 +161,7 @@ void send_hid_with_timestamp() {
 	else {
 		printf("failed to write\n");
 	}
+	
 }
 
 void init_task_hid() {
@@ -241,11 +235,12 @@ void reset_hid_stats() {
 	mcu_read_count = 0;
 	pc_write_count = 0;
 	pc_read_count = 0;
-	pc_lifetime = 0;
+	pc_time = 0;
 	hid_errors = 0;
 
 	pipeline.timestamp.set();
-	// clear_feedback_pipeline();
+	pipeline.feedback.clear();
+	pipeline.setup_queue.clear();
 }
 
 void dump_vector(Vector<float>* data) {

@@ -11,78 +11,90 @@
  *
  ********************************************************************************/
 
+use chrono::{DateTime, Utc};
 use std::sync::{Arc, RwLock};
 
-pub const HID_PACKET_SIZE:  usize = 64;
+pub const HID_PACKET_SIZE: usize = 64;
 
-pub const HID_MODE_INDEX:   usize = 0; // 255 = init data, 1 = overwrite data, 13 = kill
-pub const HID_TOGL_INDEX:   usize = 1; // init data: (1 = init task, 2 = config task) overwrite data: (latch)
-pub const HID_TASK_INDEX:   usize = 2; // only applies to init/overwrite data
-pub const HID_DATA_INDEX:   usize = 3; // data start
-pub const HID_TIME_INDEX:   usize = 60; // data start
-pub const HID_RUNT_INDEX:   usize = 60; // data start
+pub const HID_MODE_INDEX: usize = 0; // 255 = init data, 1 = overwrite data, 13 = kill
+pub const HID_TOGL_INDEX: usize = 1; // init data: (1 = init task, 2 = config task) overwrite data: (latch)
+pub const HID_TASK_INDEX: usize = 2; // only applies to init/overwrite data
+pub const HID_DATA_INDEX: usize = 3; // data start
+pub const HID_RUNT_INDEX: usize = 48;
+pub const HID_RUCT_INDEX: usize = 52;
+pub const HID_PCTS_INDEX: usize = 56;
+pub const HID_UCTS_INDEX: usize = 60;
 
 pub type HidPacket = [u8; HID_PACKET_SIZE];
 
 #[derive(Clone)]
-pub struct HidStats {
-    lifetime: Arc<RwLock<f64>>,
-    packets_sent: Arc<RwLock<f64>>,
-    packets_read: Arc<RwLock<f64>>,
+pub struct NetFlowStats {
+    ntx: Arc<RwLock<f64>>,
+    nrx: Arc<RwLock<f64>>,
+    t: Arc<RwLock<f64>>,
 }
 
-impl HidStats {
-    pub fn new() -> HidStats {
-        HidStats {
-            lifetime: Arc::new(RwLock::new(0.0)),
-            packets_sent: Arc::new(RwLock::new(0.0)),
-            packets_read: Arc::new(RwLock::new(0.0)),
+impl NetFlowStats {
+    pub fn new() -> NetFlowStats {
+        NetFlowStats {
+            ntx: Arc::new(RwLock::new(0.0)),
+            nrx: Arc::new(RwLock::new(0.0)),
+            t: Arc::new(RwLock::new(0.0)),
         }
     }
 
-    pub fn lifetime(&self) -> f64 {
-        *self.lifetime.read().unwrap()
+    pub fn n_tx(&self) -> f64 {
+        *self.ntx.read().unwrap()
     }
 
-    pub fn set_lifetime(&self, t: f64) {
-        *self.lifetime.write().unwrap() = t;
+    pub fn update_tx(&self, n: f64) {
+        *self.ntx.write().unwrap() += n;
     }
 
-    pub fn update_lifetime(&self, t: f64) {
-        *self.lifetime.write().unwrap() += t;
+    pub fn set_tx(&self, n: f64) {
+        *self.ntx.write().unwrap() = n;
     }
 
-    pub fn packets_sent(&self) -> f64 {
-        *self.packets_sent.read().unwrap()
+    pub fn n_rx(&self) -> f64 {
+        *self.nrx.read().unwrap()
     }
 
-    pub fn update_packets_sent(&self, n: f64) {
-        *self.packets_sent.write().unwrap() += n;
+    pub fn update_rx(&self, n: f64) {
+        *self.nrx.write().unwrap() += n;
     }
 
-    pub fn set_packets_sent(&self, n: f64) {
-        *self.packets_sent.write().unwrap() = n;
+    pub fn set_rx(&self, n: f64) {
+        *self.nrx.write().unwrap() = n;
     }
 
-    pub fn packets_read(&self) -> f64 {
-        *self.packets_read.read().unwrap()
+    pub fn time(&self) -> f64 {
+        *self.t.read().unwrap()
     }
 
-    pub fn update_packets_read(&self, n: f64) {
-        *self.packets_read.write().unwrap() += n;
+    pub fn from_utc(&self, datetime: DateTime<Utc>) -> f64 {
+        let t = 1E-6 * (Utc::now().timestamp_micros() - datetime.timestamp_micros()) as f64;
+        *self.t.write().unwrap() = t;
+        t
     }
 
-    pub fn set_packets_read(&self, n: f64) {
-        *self.packets_read.write().unwrap() = n;
+    pub fn from_utcs(&self, datetime1: DateTime<Utc>, datetime2: DateTime<Utc>) -> f64 {
+        let t = 1E-6 * (datetime1.timestamp_micros() - datetime2.timestamp_micros()) as f64;
+        *self.t.write().unwrap() = t;
+        t
+    }
+
+    pub fn from_bytes(&self, bytes: &[u8]) -> f64 {
+        let t = f32::from_le_bytes(bytes.try_into().unwrap()) as f64;
+        *self.t.write().unwrap() = t;
+        t
+    }
+
+    pub fn set_time(&self, t: f64) {
+        *self.t.write().unwrap() = t;
     }
 
     pub fn print(&self) {
-        println!(
-            "\t\tLifetime: {}\n\t\tPackets sent: {}\n\t\tPackets read: {}",
-            self.lifetime(),
-            self.packets_sent(),
-            self.packets_read()
-        );
+        println!("\tPackets Tx/Rx: {}/{}", self.n_tx(), self.n_rx());
     }
 }
 

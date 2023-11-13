@@ -12,11 +12,12 @@
  ********************************************************************************/
 
 use crate::{
-    rid::{data_structures::*},
-    socks::socks::*,
-    utilities::{loaders::*},
+    rid::data_structures::*,
+    socks::{message::UDP_PACKET_SIZE, socks::*},
+    utilities::loaders::*,
 };
-use std::{time::Instant};
+use serde::{Deserialize, Serialize};
+
 /// helpful constants to use
 pub static P: u8 = 0x50;
 pub static W: u8 = 0x57;
@@ -27,8 +28,8 @@ pub static C: u8 = 0x53;
 pub static DELIM: u8 = 0x3A;
 
 /// HID laws
-pub static MAX_HID_FLOAT_DATA: usize = 13;
-pub static MAX_TASK_PARAMETERS: usize = 130;
+pub static MAX_HID_FLOAT_DATA: usize = 10;
+pub static MAX_TASK_PARAMETERS: usize = 100;
 
 /// first HID identifier
 /// determines which report handler to use
@@ -70,12 +71,13 @@ pub fn get_task_reset_packet(
     buffer[HID_TASK_INDEX] = id;
 
     ((1E6 / rate) as u16)
-    .to_le_bytes()
-    .iter()
-    .chain(driver.iter())
-    .chain([input_ids.len() as u8].iter())
-    .chain(input_ids.iter())
-    .enumerate().for_each(|(i, &b)| buffer[HID_DATA_INDEX+i] = b);
+        .to_le_bytes()
+        .iter()
+        .chain(driver.iter())
+        .chain([input_ids.len() as u8].iter())
+        .chain(input_ids.iter())
+        .enumerate()
+        .for_each(|(i, &b)| buffer[HID_DATA_INDEX + i] = b);
     buffer
 }
 
@@ -89,13 +91,13 @@ pub fn get_task_parameter_packets(id: u8, parameters: &Vec<f64>) -> Vec<HidPacke
             buffer[HID_TOGL_INDEX] = SETUP_CONFIG_MODE;
             buffer[HID_TASK_INDEX] = id;
             buffer[HID_DATA_INDEX] = i as u8;
-            buffer[HID_DATA_INDEX+1] = chunk.len() as u8;
+            buffer[HID_DATA_INDEX + 1] = chunk.len() as u8;
             chunk
                 .into_iter()
                 .map(|&x| (x as f32).to_le_bytes())
                 .flatten()
                 .enumerate()
-                .for_each(|(i, b)| buffer[HID_DATA_INDEX+2+i] = b);
+                .for_each(|(i, b)| buffer[HID_DATA_INDEX + 2 + i] = b);
 
             buffer
         })
@@ -115,22 +117,73 @@ pub fn get_task_initializers(
         .collect()
 }
 
-pub struct EmbeddedTask {
-    pub rate: f64,
-    pub latch: u8,
+pub fn get_latch_packet(i: u8, latch: u8, data: &Vec<f64>) -> HidPacket {
+    let mut buffer = [0; HID_PACKET_SIZE];
+    buffer[HID_MODE_INDEX] = TASK_CONTROL_ID;
+    buffer[HID_TOGL_INDEX] = latch;
+    buffer[HID_TASK_INDEX] = i;
+    buffer[HID_DATA_INDEX] = data.len() as u8;
+    data.iter().enumerate().for_each(|(i, &x)| {
+        (x as f32)
+            .to_le_bytes()
+            .iter()
+            .enumerate()
+            .for_each(|(j, &b)| buffer[(4 * i) + j] = b)
+    });
+    buffer
+}
 
+pub fn disable_latch(i: u8) -> HidPacket {
+    get_latch_packet(i, 0, &vec![])
+}
+
+pub fn output_latch(i: u8, data: &Vec<f64>) -> HidPacket {
+    get_latch_packet(i, 1, data)
+}
+
+pub fn input_latch(i: u8, data: &Vec<f64>) -> HidPacket {
+    get_latch_packet(i, 2, data)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum TaskMarshallType {
+    Input,
+    Output,
+    Parameter,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TaskMarshall {
+    pub name: String,
+    pub data: Vec<f64>,
+    pub mode: TaskMarshallType,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TaskCommunication {
+    pub name: String,
+    pub latch: u8,
+    pub rate: f64,
+    pub pc_time: f64,
+    pub mcu_time: f64,
+    pub run_time: f64,
+    pub data: Vec<f64>,
+}
+
+pub struct EmbeddedTask {
     pub name: String,
     pub driver: String,
 
-    pub parameters: Vec<f64>,
-
     pub input_names: Vec<String>,
 
-    pub run_time: f64,
-    pub pc_timestamp: f64,
-    pub mcu_timestamp: f64,
+    pub output: Vec<f64>,
+    pub parameters: Vec<f64>,
 
-    pub lifetime: Instant,
+    pub latch: u8,
+    pub rate: f64,
+    pub pc_time: f64,
+    pub mcu_time: f64,
+    pub run_time: f64,
 }
 
 impl EmbeddedTask {
@@ -142,29 +195,26 @@ impl EmbeddedTask {
         params: Vec<f64>,
     ) -> EmbeddedTask {
         EmbeddedTask {
-            rate: rate,
-            latch: 0,
-
             name: name.clone(),
             driver: driver,
 
+            output: vec![],
             parameters: params,
-
             input_names: input_names,
 
+            latch: 0,
+            rate: rate,
+            pc_time: 0.0,
+            mcu_time: 0.0,
             run_time: 0.0,
-            pc_timestamp: 0.0,
-            mcu_timestamp: 0.0,
-
-            lifetime: Instant::now(),
         }
     }
 
     pub fn set_params(&mut self, params: Vec<f64>) {
         if params.len() > MAX_TASK_PARAMETERS {
             panic!(
-                "{:?} configuration exceeds maximum parameters ({})",
-                self.name, MAX_TASK_PARAMETERS
+                "{:?} configuration exceeds maximum parameters ({MAX_TASK_PARAMETERS})",
+                self.name
             );
         }
         self.parameters = params;
@@ -177,32 +227,46 @@ impl EmbeddedTask {
     pub fn params(&self) -> Vec<u8> {
         self.parameters
             .iter()
-            .map(|c| (*c as f32).to_be_bytes().to_vec())
+            .map(|c| (*c as f32).to_le_bytes().to_vec())
             .flatten()
             .collect()
     }
 
-    pub fn update(&mut self, latch: u8, run_time: f64, pc_time: f64, mcu_time: f64) {
-        self.latch = latch;
-        self.run_time = run_time;
-        self.pc_timestamp = pc_time;
-        self.mcu_timestamp = mcu_time;
+    pub fn update(&mut self, packet: TaskCommunication) {
+        // let mcu_diff = packet.mcu_time - self.mcu_time;
+
+        // let new_diff = packet.pc_time - packet.mcu_time;
+        // let prev_diff = self.pc_time - self.mcu_time;
+
+        // let diff_ratio = new_diff.abs() / prev_diff.abs(); // ratio of time differences, want = 1
+        // let n_missed: u8 = ((self.rate * mcu_diff) + 0.5) as u8; // average time * rate = estimated samples
+
+        // if n_missed > 1 {
+        //     println!("[{}] missed {:.1} packets {:.4}s {:.4}s", self.name, n_missed, packet.pc_time - self.pc_time, mcu_diff);
+        // }
+        // // if diff_ratio < 1.0 - 1E-6 || diff_ratio > 1.0 + 1E-6 {
+        // if (diff_ratio - 1.0).abs() > 1E-6 {
+        //     println!("[{}] time drift delta: {:.6}s, drift: {:.6}s", self.name, new_diff - prev_diff, new_diff)
+        // }
+        // if mcu_diff < 0.95 / self.rate {
+        //     println!("[{}] is running to fast {:.6}s", self.name, mcu_diff)
+        // }
+
+        self.latch = packet.latch;
+        self.output = packet.data;
+        self.pc_time = packet.pc_time;
+        self.mcu_time = packet.mcu_time;
+        self.run_time = packet.run_time;
     }
 
     pub fn print(&self) {
         println!("{:?}: {:?}", self.name, self.driver);
         println!(
             "\tRate: {}Hz\n\tRuntime: {}ms\n\tTimestamp(pc/mcu): {}s/{}s",
-            self.rate, self.run_time, self.pc_timestamp, self.mcu_timestamp
+            self.rate, self.run_time, self.pc_time, self.mcu_time
         );
         println!("\tparameters:\n\t\t{:?}", self.parameters);
     }
-}
-
-pub struct TaskUpdate {
-    pub task: String,
-    pub mode: u8,
-    pub data: Vec<u8>,
 }
 
 pub struct RobotFirmware {
@@ -212,9 +276,7 @@ pub struct RobotFirmware {
 }
 
 impl RobotFirmware {
-    pub fn from_byu(
-        byu: BuffYamlUtil,
-    ) -> RobotFirmware {
+    pub fn from_byu(byu: BuffYamlUtil) -> RobotFirmware {
         let tasks: Vec<EmbeddedTask> = byu
             .data()
             .as_hash()
@@ -231,10 +293,15 @@ impl RobotFirmware {
             })
             .collect();
 
-        let target_names: Vec<String> = (0..tasks.len()).map(|i| tasks[i].name.clone() + "/ctrl").collect();
+        let target_names: Vec<String> = (0..tasks.len())
+            .map(|i| tasks[i].name.clone() + "/ctrl")
+            .collect();
 
         RobotFirmware {
-            sock: Sock::sinc("robot_fw", target_names.iter().map(|name| name.as_str()).collect()),
+            sock: Sock::sinc(
+                "robot_fw",
+                target_names.iter().map(|name| name.as_str()).collect(),
+            ),
             configured: vec![false; tasks.len()],
             tasks: tasks,
         }
@@ -245,9 +312,7 @@ impl RobotFirmware {
         RobotFirmware::from_byu(byu)
     }
 
-    pub fn new(
-        robot_name: &str,
-    ) -> RobotFirmware {
+    pub fn new(robot_name: &str) -> RobotFirmware {
         let byu = BuffYamlUtil::robot(robot_name, "firmware_tasks");
         RobotFirmware::from_byu(byu)
     }
@@ -275,106 +340,104 @@ impl RobotFirmware {
             .collect()
     }
 
-    pub fn task_init_packet(&self, idx: usize) -> Vec<HidPacket> {
-        match self.configured[idx] {
-            true => {
-                vec![]
-            }
-            false => get_task_initializers(
-                idx as u8,
-                self.tasks[idx].rate,
-                &self.tasks[idx].driver(),
-                &self.tasks[idx].parameters,
-                &self.input_task_ids(&self.tasks[idx].input_names),
-            ),
-        }
+    pub fn unconfigured_tasks(&self) -> Vec<usize> {
+        (0..self.configured.len())
+            .filter(|&i| self.configured[i])
+            .collect()
     }
 
-    pub fn task_init_packets(&self) -> Vec<HidPacket> {
+    pub fn all_init_packets(&self) -> Vec<HidPacket> {
         (0..self.tasks.len())
-            .map(|i| self.task_init_packet(i))
+            .map(|i| {
+                get_task_initializers(
+                    i as u8,
+                    self.tasks[i].rate,
+                    &self.tasks[i].driver(),
+                    &self.tasks[i].parameters,
+                    &self.input_task_ids(&self.tasks[i].input_names),
+                )
+            })
             .flatten()
             .collect()
     }
 
-    pub fn task_param_packet(&self, idx: usize) -> Vec<HidPacket> {
-        match self.configured[idx] {
-            true => vec![],
-            false => get_task_parameter_packets(idx as u8, &self.tasks[idx].parameters),
-        }
-    }
-
-    pub fn task_param_packets(&self) -> Vec<HidPacket> {
-        (0..self.tasks.len())
-            .map(|i| self.task_param_packet(i))
+    pub fn unconfigured_parameters(&self) -> Vec<HidPacket> {
+        self.unconfigured_tasks()
+            .into_iter()
+            .map(|i| get_task_parameter_packets(i as u8, &self.tasks[i].parameters))
             .flatten()
             .collect()
     }
 
-    pub fn parse_sock(&mut self) {
-        
+    pub fn parse_sock(&mut self) -> Option<HidPacket> {
+        let mut buffer = [0u8; UDP_PACKET_SIZE];
+        match self.sock.try_rx(&mut buffer) {
+            Some(i) => {
+                let packet: TaskMarshall =
+                    bincode::deserialize(&self.sock.messages[i].to_payload()).unwrap();
+                match self.sock.is_target(&packet.name) {
+                    Some(i) => match packet.mode {
+                        TaskMarshallType::Input => Some(input_latch(i as u8, &packet.data)),
+                        TaskMarshallType::Output => Some(output_latch(i as u8, &packet.data)),
+                        TaskMarshallType::Parameter => {
+                            self.configured[i] = false;
+                            self.tasks[i].set_params(packet.data);
+                            None
+                        }
+                    },
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
-    pub fn parse_hid_feedback(&mut self, report: HidPacket, mcu_stats: &HidStats) {
-        let rid = report[HID_MODE_INDEX];
-        let mode = report[HID_TOGL_INDEX];
-        let mcu_lifetime = f32::from_le_bytes([
-            report[HID_TIME_INDEX],
-            report[HID_TIME_INDEX+1],
-            report[HID_TIME_INDEX+2],
-            report[HID_TIME_INDEX+3]
-        ]) as f64;
+    pub fn parse_hid(
+        &mut self,
+        pc_time: f64,
+        mcu_time: f64,
+        run_time: f64,
+        task_idx: usize,
+        buffer: HidPacket,
+    ) {
+        if self.tasks.len() > task_idx {
+            let data_length = buffer[HID_DATA_INDEX] as usize;
 
-        let prev_mcu_lifetime = mcu_stats.lifetime();
-        mcu_stats.set_lifetime(mcu_lifetime);
-
-        let lifetime_diff = mcu_lifetime - prev_mcu_lifetime;
-        if lifetime_diff >= 0.01 {
-            println!("MCU Lifetime jump: {}", lifetime_diff);
-        }
-
-        if rid == INIT_REPORT_ID {
-            if mode == INIT_REPORT_ID {
-                mcu_stats.set_packets_sent(f32::from_le_bytes([
-                    report[HID_TASK_INDEX],
-                    report[HID_TASK_INDEX+1],
-                    report[HID_TASK_INDEX+2],
-                    report[HID_TASK_INDEX+3]
-                ]) as f64);
-                mcu_stats.set_packets_read(f32::from_le_bytes([
-                    report[HID_TASK_INDEX+4],
-                    report[HID_TASK_INDEX+5],
-                    report[HID_TASK_INDEX+6],
-                    report[HID_TASK_INDEX+7]
-                ]) as f64);
-            }
-        } else if rid == TASK_CONTROL_ID && self.tasks.len() > mode as usize {
-            // Zero length output packet means not configured
-            // (only sends when task_node.is_configured() == false)
-            let data_length = report[3] as usize;
             if data_length == 0 {
-                self.configured[mode as usize] = false;
+                // tasks send 0 length data when unconfigured
+
+                self.configured[task_idx] = false;
             } else if data_length < MAX_HID_FLOAT_DATA {
+                // garbage shield
 
-                let pc_time = 1E-6 * self.sock.lifetime.elapsed().as_micros() as f64;
-                let runtime = f32::from_le_bytes([
-                    report[HID_RUNT_INDEX],
-                    report[HID_RUNT_INDEX+1],
-                    report[HID_RUNT_INDEX+2],
-                    report[HID_RUNT_INDEX+3]
-                ]) as f64;
+                let comm_packet = TaskCommunication {
+                    name: format!("{}", self.tasks[task_idx].name),
+                    latch: buffer[HID_TOGL_INDEX],
+                    rate: 1.0 / (mcu_time - self.tasks[task_idx].mcu_time),
+                    pc_time: pc_time,
+                    mcu_time: mcu_time,
+                    run_time: run_time,
+                    data: buffer[4..4 + (4 * data_length)]
+                        .to_vec()
+                        .chunks(4)
+                        .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()) as f64)
+                        .collect(),
+                };
 
-                let data: Vec<f64> = report[4..4+(4*data_length)].to_vec().chunks(4).map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()) as f64).collect();
-                self.sock.tx_any_payload(&self.tasks[mode as usize].name, data, (1E6 / self.tasks[mode as usize].rate) as u64);
-                self.tasks[mode as usize].update(report[2], runtime, pc_time, mcu_lifetime);
-                self.configured[mode as usize] = true;
+                // println!("{} {}", self.tasks[task_idx].name, (comm_packet.pc_time - self.tasks[task_idx].pc_time + comm_packet.mcu_time - self.tasks[task_idx].mcu_time) / 2.0);
 
+                self.sock.tx_any_payload(
+                    &comm_packet.name,
+                    &comm_packet,
+                    (1E6 / self.tasks[task_idx].rate) as u64,
+                );
+
+                self.tasks[task_idx].update(comm_packet);
+
+                self.configured[task_idx] = true;
             } else {
-                println!("[Robot-Firmware]: unknown report {report:?}");
+                println!("[Robot-Firmware]: garbage report {buffer:?}");
             }
-
-            mcu_stats.update_packets_sent(1.0); // only works if we don't miss packets
-            mcu_stats.update_packets_read(1.0);
         }
     }
 

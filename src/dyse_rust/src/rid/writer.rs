@@ -14,21 +14,13 @@
 extern crate hidapi;
 use hidapi::HidDevice;
 
-use crate::{
-    rid::{
-        layer::*,
-        data_structures::{
-            HidPacket,
-            HID_PACKET_SIZE,
-            HID_TIME_INDEX,
-        },
-    },
+use crate::rid::{
+    data_structures::{HidPacket, HID_PACKET_SIZE, HID_PCTS_INDEX, HID_UCTS_INDEX},
+    layer::*,
 };
 
-use std::{
-    sync::mpsc::Receiver, 
-    time::Instant
-};
+use chrono::Utc;
+use std::{sync::mpsc::Receiver, time::Instant};
 
 pub struct HidWriter {
     writer_rx: Receiver<HidPacket>,
@@ -51,7 +43,7 @@ impl HidWriter {
         println!(
             "Writer Dump\n\ttimer: {} us\n\tpackets: {}",
             self.timestamp.elapsed().as_micros(),
-            self.layer.pc_stats.packets_sent(),
+            self.layer.pc_stats.n_tx(),
         );
     }
 
@@ -59,7 +51,11 @@ impl HidWriter {
         let mut buffer = [0; HID_PACKET_SIZE];
         buffer[0] = 255;
         buffer[1] = 255;
-        (self.layer.pc_stats.packets_sent() as f32).to_be_bytes().iter().enumerate().for_each(|(i, b)| buffer[i+2] = *b);
+        (self.layer.pc_stats.n_tx() as f32)
+            .to_be_bytes()
+            .iter()
+            .enumerate()
+            .for_each(|(i, b)| buffer[i + 2] = *b);
         buffer
     }
 
@@ -89,16 +85,28 @@ impl HidWriter {
     /// let writer = HidWriter::new(layer, writer_rx);
     /// writer.write(buffer); // writes some_data to the teensy
     /// ```
-    pub fn write(&mut self, buffer: HidPacket) {
+    pub fn write(&mut self, buffer: &mut HidPacket) {
+        (1E-6 * (Utc::now().timestamp_micros() - self.layer.datetime.timestamp_micros()) as f32)
+            .to_le_bytes()
+            .iter()
+            .enumerate()
+            .for_each(|(i, &b)| buffer[HID_PCTS_INDEX + i] = b);
 
-        match self.teensy.write(&buffer) {
+        (self.layer.mcu_stats.time() as f32)
+            .to_le_bytes()
+            .iter()
+            .enumerate()
+            .for_each(|(i, &b)| buffer[HID_UCTS_INDEX + i] = b);
+
+        match self.teensy.write(buffer) {
             Ok(value) => {
-                self.timestamp = Instant::now();
                 if value == HID_PACKET_SIZE {
-                    self.layer.pc_stats.update_packets_sent(1.0);
+                    self.timestamp = Instant::now();
+                    self.layer.pc_stats.update_tx(1.0);
                 }
             }
             _ => {
+                self.layer.control_flags.initialize(false);
                 self.reconnect();
             }
         }
@@ -110,25 +118,26 @@ impl HidWriter {
     /// # Example
     /// See [`HidLayer::pipeline()`] source
     pub fn pipeline(&mut self) {
-
         println!("[HID-writer]: Live");
-        
-        let lifetime = Instant::now();
 
         while !self.layer.control_flags.is_shutdown() {
-
             let t = Instant::now();
 
-            let mut buffer = self.writer_rx.try_recv().unwrap_or(self.silent_channel_default());
-            (1E-6 * (lifetime.elapsed().as_micros() as f32)).to_be_bytes().iter().enumerate().for_each(|(i, &b)| buffer[i + HID_TIME_INDEX] = b);
+            let mut buffer = self
+                .writer_rx
+                .try_recv()
+                .unwrap_or(self.silent_channel_default());
 
-            self.write(buffer);
+            self.write(&mut buffer);
 
             self.layer.delay(t);
+            // if self.layer.delay(t) > 1000.0 {
+            //     println!("[HID-writer]: over cycled {:.6}s", 1E-6 * (t.elapsed().as_micros() as f64));
+            // }
         }
 
-        let buffer = [13; HID_PACKET_SIZE];
-        self.write(buffer);
+        let mut buffer = [13; HID_PACKET_SIZE];
+        self.write(&mut buffer);
 
         println!("[HID-writer]: Shutdown");
     }

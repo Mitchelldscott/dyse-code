@@ -15,18 +15,9 @@
 use more_asserts::assert_le;
 
 use crate::{
-    ipv4, 
-    sock_uri, 
-    build_fn,
-    sync,
-    unsync,
-    add_task,
-    socks::{
-        sockapi, 
-        task::*,
-        socks::*, 
-        message::*, 
-    }
+    add_task, build_fn, ipv4, sock_uri,
+    socks::{message::*, sockapi, socks::*, task::*},
+    sync, unsync,
 };
 use std::{
     env, io,
@@ -56,9 +47,13 @@ pub mod high_sock {
 
     #[test]
     pub fn demo_hub() {
-        let mut sock = unsync!("hub", vec!["signal1", "sum"], "inverse", 0, |_ctx: u8, data: f64| {
-            0.001*data[0]
-        });
+        let mut sock = unsync!(
+            "hub",
+            vec!["signal1", "sum"],
+            "inverse",
+            0,
+            |_ctx: u8, data: f64| { 0.001 * data[0] }
+        );
         add_task!(sock, vec![], "identity", 0, |_ctx: u8, data: f64| {
             data[0]
         });
@@ -68,10 +63,16 @@ pub mod high_sock {
 
     #[test]
     pub fn demo_relay() {
-        let mut sock = sync!("relay", vec!["identity", "inverse"], "sum", 10.0f64, |ctx: f64, a: f64, b: f64| {
-            ctx = (ctx + a + b) / 2.0;
-            ctx
-        });
+        let mut sock = sync!(
+            "relay",
+            vec!["identity", "inverse"],
+            "sum",
+            10.0f64,
+            |ctx: f64, a: f64, b: f64| {
+                ctx = (ctx + a + b) / 2.0;
+                ctx
+            }
+        );
         sock.spin();
         sock.log_heavy(sock.tasks[0].get_context::<f64>());
     }
@@ -112,7 +113,7 @@ pub mod high_sock {
             };
 
             if pub_rate.elapsed().as_millis() > 1000 {
-                sock.tx_payload(value/2.0);
+                sock.tx_payload(value / 2.0);
                 pub_rate = Instant::now();
             }
 

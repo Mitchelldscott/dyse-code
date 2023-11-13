@@ -6,8 +6,8 @@
 #ifndef HIDCOMMS_H
 #define HIDCOMMS_H
 
-#define HID_REFRESH_RATE 200.0
-#define MAX_FLOAT_DATA_PER_SEND 13
+#define HID_REFRESH_RATE 1000.0
+#define MAX_FLOAT_DATA_PER_SEND 10
 
 extern float hid_errors;
 

@@ -101,10 +101,10 @@ void update_task(TaskSetupPacket* task_params) {
 		nodes.print();
 		return;
 	}
-	if (nodes[node_idx]->is_configured()) {
-		printf("Node %i is already configured\tThis should never happen\n", task_params->task_id);
-		return;
-	}
+	// if (nodes[node_idx]->is_configured()) {
+	// 	printf("Node %i is already configured\tThis should never happen\n", task_params->task_id);
+	// 	return;
+	// }
 
 	nodes[node_idx]->configure(task_params->chunk_id * task_params->chunk_size, 
 								task_params->chunk_size,
@@ -251,7 +251,7 @@ void spin() {
 			// pulls outputs from input tasks and runs the current task
 			task_timer.set();
 			if (nodes[i]->run_task(sys_time.secs())){
-				// printf("Ran: node: %i latch: %i systime: %f\n", i, nodes[i]->is_latched(), sys_timers.total_seconds(0));
+				// printf("Ran: node: %i latch: %i systime: %f\n", i, nodes[i]->is_latched(), sys_time.total_seconds());
 				// put task output, context in the pipeline for publishing
 				task_publish_handler(i);
 				run_status = 1;

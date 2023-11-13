@@ -10,17 +10,17 @@
  *
  *
  ********************************************************************************/
+use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
-    time::{Duration, Instant},
     sync::{Arc, RwLock},
+    time::{Duration, Instant},
 };
-use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::ipv4;
 use crate::sock_uri;
-use crate::socks::task::*;
 use crate::socks::message::*;
+use crate::socks::task::*;
 
 #[macro_export]
 macro_rules! ipv4 {
@@ -84,10 +84,14 @@ fn new_multicast() -> UdpSocket {
 }
 
 pub fn truncate_name(name: &str) -> Option<String> {
-    match (name.len() > 0, name.len() <= MAX_SOCK_NAME_LEN) {
-        (true, false) => Some(name.chars().take(MAX_SOCK_NAME_LEN).collect()),
-        (true, true) => Some(name.to_string()),
-        _ => None,
+    match name.len() > 0 {
+        true => Some(
+            name.chars()
+                .take(MAX_SOCK_NAME_LEN)
+                .map(|c| c.to_ascii_lowercase())
+                .collect(),
+        ),
+        false => None,
     }
 }
 
@@ -108,8 +112,8 @@ pub struct Sock {
 
 impl Sock {
     pub fn new(name: &str, targets: Vec<&str>, tasks: Vec<Task>) -> Sock {
-
-        let short_name = truncate_name(name).expect(format!("Invalid name for sock: {name}").as_str());
+        let short_name =
+            truncate_name(name).expect(format!("Invalid name for sock: {name}").as_str());
 
         let n_targets = targets.len();
 
@@ -124,7 +128,10 @@ impl Sock {
             shutdown: Arc::new(RwLock::new(false)),
 
             tasks: tasks,
-            targets: targets.into_iter().map(|target| target.to_string()).collect(),
+            targets: targets
+                .into_iter()
+                .map(|target| target.to_string())
+                .collect(),
             messages: vec![Message::new(); n_targets],
         }
     }
@@ -137,20 +144,45 @@ impl Sock {
         Sock::new(name, targets, vec![])
     }
 
-    pub fn event_task<T: serde::Serialize>(name: &str, targets: Vec<&str>, task_name: &str, context: T, task: TaskFn, task_targets: Vec<usize>) -> Sock {
+    pub fn event_task<T: serde::Serialize>(
+        name: &str,
+        targets: Vec<&str>,
+        task_name: &str,
+        context: T,
+        task: TaskFn,
+        task_targets: Vec<usize>,
+    ) -> Sock {
+        let short_task_name = truncate_name(task_name).unwrap_or(
+            truncate_name(name)
+                .expect(format!("Invalid names for sock: {} {}", name, task_name).as_str()),
+        );
 
-        let short_task_name = truncate_name(task_name)
-            .unwrap_or(truncate_name(name).expect(format!("Invalid names for sock: {} {}", name, task_name).as_str()));
-
-        let task_wrapper = Task::new(short_task_name.as_str(), task_targets, bincode::serialize(&context).expect("Failed to serialize default context"), task);
+        let task_wrapper = Task::new(
+            short_task_name.as_str(),
+            task_targets,
+            bincode::serialize(&context).expect("Failed to serialize default context"),
+            task,
+        );
         Sock::new(name, targets, vec![task_wrapper])
     }
 
-    pub fn unsynced<T: serde::Serialize>(name: &str, targets: Vec<&str>, task_name: &str, context: T, task: TaskFn) -> Sock {
+    pub fn unsynced<T: serde::Serialize>(
+        name: &str,
+        targets: Vec<&str>,
+        task_name: &str,
+        context: T,
+        task: TaskFn,
+    ) -> Sock {
         Sock::event_task(name, targets, task_name, context, task, vec![])
     }
 
-    pub fn synced<T: serde::Serialize>(name: &str, targets: Vec<&str>, task_name: &str, context: T, task: TaskFn) -> Sock {
+    pub fn synced<T: serde::Serialize>(
+        name: &str,
+        targets: Vec<&str>,
+        task_name: &str,
+        context: T,
+        task: TaskFn,
+    ) -> Sock {
         let task_targets = (0..targets.len()).collect();
         Sock::event_task(name, targets, task_name, context, task, task_targets)
     }
@@ -186,7 +218,13 @@ impl Sock {
         (0..self.targets.len()).find(|&i| self.targets[i as usize] == *name)
     }
 
-    pub fn link_task<T: serde::Serialize>(&mut self, name: &str, targets: Vec<&str>, context: T, task: TaskFn) {
+    pub fn link_task<T: serde::Serialize>(
+        &mut self,
+        name: &str,
+        targets: Vec<&str>,
+        context: T,
+        task: TaskFn,
+    ) {
         let target_idxs = targets
             .iter()
             .map(|target| match self.is_target(target) {
@@ -200,7 +238,12 @@ impl Sock {
             .collect();
 
         self.tasks.retain(|task| task.name != name);
-        self.tasks.push(Task::new(name, target_idxs, bincode::serialize(&context).expect("Failed to serialize default context"), task));
+        self.tasks.push(Task::new(
+            name,
+            target_idxs,
+            bincode::serialize(&context).expect("Failed to serialize default context"),
+            task,
+        ));
     }
 
     pub fn tx(&mut self, mut buffer: UdpPacket, addr: SocketAddr) -> bool {
@@ -233,18 +276,26 @@ impl Sock {
     }
 
     pub fn tx_payload<T: serde::Serialize>(&mut self, payload: T) {
-        let msg = Message::from_payload(bincode::serialize(&payload).expect("Failed to serialize payload (user)"));
-        msg.packets(self.header_bytes(&self.name, self.activity.elapsed().as_micros() as u64)).iter().for_each(|buffer| {
-            self.tx(*buffer, MULTICAST_URI);
-        });
+        let msg = Message::from_payload(
+            bincode::serialize(&payload).expect("Failed to serialize payload (user)"),
+        );
+        msg.packets(self.header_bytes(&self.name, self.activity.elapsed().as_micros() as u64))
+            .iter()
+            .for_each(|buffer| {
+                self.tx(*buffer, MULTICAST_URI);
+            });
         self.activity = Instant::now();
     }
 
-    pub fn tx_any_payload<T: serde::Serialize>(&mut self, name: &str, payload: T, micros: u64) {
-        let msg = Message::from_payload(bincode::serialize(&payload).expect("Failed to serialize payload (user)"));
-        msg.packets(self.header_bytes(name, micros)).iter().for_each(|buffer| {
-            self.tx(*buffer, MULTICAST_URI);
-        });
+    pub fn tx_any_payload<T: serde::Serialize>(&mut self, name: &str, payload: &T, micros: u64) {
+        let msg = Message::from_payload(
+            bincode::serialize(payload).expect("Failed to serialize payload (user)"),
+        );
+        msg.packets(self.header_bytes(name, micros))
+            .iter()
+            .for_each(|buffer| {
+                self.tx(*buffer, MULTICAST_URI);
+            });
     }
 
     pub fn collect(
@@ -263,17 +314,25 @@ impl Sock {
     pub fn try_rx(&mut self, buffer: &mut UdpPacket) -> Option<usize> {
         match self.rx(buffer) {
             Some((header, fragment)) => {
-
                 let (name, ntx, _, activity) = self.header_from_bytes(header);
 
-                match name.as_str() { // this should be handled better, kill sock is bad
-                    "shutdown" => { *self.shutdown.write().unwrap() = true; None},
-                    "identify" => {
-                        self.tx_any_payload(&format!("id/{}", self.name), self.to_heavy_string().as_bytes().to_vec(), 0);
+                match name.as_str() {
+                    // this should be handled better, kill sock is bad
+                    "shutdown" => {
+                        *self.shutdown.write().unwrap() = true;
                         None
                     }
-                    _ => { // Don't collect system messages
-                        
+                    "identify" => {
+                        self.tx_any_payload(
+                            &format!("id/{}", self.name),
+                            &self.to_heavy_string().as_bytes().to_vec(),
+                            0,
+                        );
+                        None
+                    }
+                    _ => {
+                        // Don't collect system messages
+
                         match self.is_target(&name) {
                             Some(i) => {
                                 self.nrx += 1;
@@ -290,17 +349,40 @@ impl Sock {
     }
 
     pub fn task_available(&self, task_idx: usize) -> bool {
-        (0..self.tasks[task_idx].targets.len()).map(|i| {
-            let msg_idx = self.tasks[task_idx].targets[i];
-            match self.messages[msg_idx].is_available() {
-                true => self.messages[msg_idx].timestamp.elapsed().as_micros(),
-                false => u128::MAX,
-            }
-        }).max().unwrap_or(u128::MAX) < self.tasks[task_idx].timestamp.elapsed().as_micros()
+        (0..self.tasks[task_idx].targets.len())
+            .map(|i| {
+                let msg_idx = self.tasks[task_idx].targets[i];
+                match self.messages[msg_idx].is_available() {
+                    true => {
+                        (self.messages[msg_idx].timestamp.elapsed().as_micros() / 5)
+                            + (4 * self.messages[msg_idx].micros_rate as u128 / 5)
+                    }
+                    false => u128::MAX,
+                }
+            })
+            .max()
+            .unwrap_or(u128::MAX)
+            < self.tasks[task_idx].timestamp.elapsed().as_micros()
+    }
+
+    pub fn available_messages(&self) -> Vec<usize> {
+        (0..self.messages.len())
+            .filter(|&i| self.messages[i].is_available())
+            .collect()
+    }
+
+    pub fn recv_available(&self) -> Vec<UdpPayload> {
+        (0..self.messages.len())
+            .filter_map(|i| match self.messages[i].is_available() {
+                true => Some(self.messages[i].to_payload()),
+                false => None,
+            })
+            .collect()
     }
 
     pub fn chain_payloads(&self, idx: usize) -> Vec<UdpPayload> {
-        self.tasks[idx].targets
+        self.tasks[idx]
+            .targets
             .iter()
             .map(|&i| self.messages[i].to_payload())
             .collect()
@@ -317,15 +399,17 @@ impl Sock {
     }
 
     pub fn unsync_call(&mut self, task_idx: usize, msg_idx: usize) -> UdpPayload {
-        match self.tasks[task_idx].timestamp.elapsed().as_micros() > 
-            self.messages[msg_idx].timestamp.elapsed().as_micros() {
-            true => self.tasks[task_idx].execute(vec![self.messages[msg_idx].to_payload()]).unwrap(),
+        match self.tasks[task_idx].timestamp.elapsed().as_micros()
+            > self.messages[msg_idx].timestamp.elapsed().as_micros()
+        {
+            true => self.tasks[task_idx]
+                .execute(vec![self.messages[msg_idx].to_payload()])
+                .unwrap(),
             false => vec![],
         }
     }
 
     pub fn try_all_tasks(&mut self, msg_idx: usize) {
-
         (0..self.tasks.len()).for_each(|i| {
             let ts = self.tasks[i].timestamp.elapsed().as_micros() as u64;
             let output = match self.tasks[i].targets.len() == 0 {
@@ -336,7 +420,7 @@ impl Sock {
 
             if output.len() > 0 {
                 let name = self.tasks[i].name.clone();
-                self.tx_any_payload(&name, output, ts);
+                self.tx_any_payload(&name, &output, ts);
             }
         });
     }
@@ -353,6 +437,7 @@ impl Sock {
                 _ => {}
             };
 
+            // let min_rate = (0..self.messages.len()).map(|i| self.messages[i].micros_rate as u128).min().unwrap_or(SOCK_IO_LIMIT);
             while t.elapsed().as_micros() < SOCK_IO_LIMIT {}
         }
     }
@@ -367,7 +452,7 @@ impl Sock {
             self.nrx,
         )
     }
-    
+
     pub fn to_heavy_string(&self) -> String {
         format!(
             "{}\n\tActivity: {}s\n\tTargets: {:?} ({} active)\n\tMessage Rates: {:.4?} Hz\n\tTasks: {:?}\n\tTask Rates: {:.4?} Hz",

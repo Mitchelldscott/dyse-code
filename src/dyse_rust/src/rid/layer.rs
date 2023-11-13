@@ -13,7 +13,8 @@
 
 extern crate hidapi;
 
-use crate::rid::data_structures::{HidControlFlags, HidStats};
+use crate::rid::data_structures::{HidControlFlags, NetFlowStats};
+use chrono::{DateTime, Utc};
 use hidapi::{HidApi, HidDevice};
 use std::time::Instant;
 
@@ -25,10 +26,11 @@ pub struct HidLayer {
 
     pub hidapi: HidApi,
 
-    // Layer Statistics
-    pub pc_stats: HidStats,
-    pub mcu_stats: HidStats,
+    pub datetime: DateTime<Utc>,
 
+    // Layer Statistics
+    pub pc_stats: NetFlowStats,
+    pub mcu_stats: NetFlowStats,
     // Layer control vectors
     pub control_flags: HidControlFlags,
 }
@@ -42,8 +44,9 @@ impl HidLayer {
 
             hidapi: HidApi::new().expect("Failed to create API instance"),
 
-            pc_stats: HidStats::new(),
-            mcu_stats: HidStats::new(),
+            datetime: Utc::now(),
+            pc_stats: NetFlowStats::new(),
+            mcu_stats: NetFlowStats::new(),
             control_flags: HidControlFlags::new(),
         }
     }
@@ -56,6 +59,7 @@ impl HidLayer {
 
             hidapi: HidApi::new().expect("Failed to create API instance"),
 
+            datetime: Utc::now(),
             pc_stats: self.pc_stats.clone(),
             mcu_stats: self.mcu_stats.clone(),
             control_flags: self.control_flags.clone(),
@@ -66,7 +70,6 @@ impl HidLayer {
         match self.hidapi.open(self.vid, self.pid) {
             Ok(dev) => {
                 println!("New Device");
-
                 self.control_flags.connect();
                 dev.set_blocking_mode(false).unwrap();
                 Some(dev)
@@ -116,10 +119,6 @@ impl HidLayer {
             t = time.elapsed().as_micros() as f64;
         }
         t
-    }
-
-    pub fn loop_delay(&self, time: Instant) {
-        self.pc_stats.update_lifetime(self.delay(time) * 1E-6);
     }
 
     pub fn print(&self) {

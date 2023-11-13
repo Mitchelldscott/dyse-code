@@ -11,22 +11,15 @@
  *
  ********************************************************************************/
 
-use std::{
-    fmt,
-    time::Instant,
-};
-use crate::socks::{
-    message::{
-        UdpPayload,
-    },
-};
+use crate::socks::message::UdpPayload;
+use std::{fmt, time::Instant};
 
-pub const TASK_SUCCESS:         usize = 0;
-pub const TASK_WARN:            usize = 1;
-pub const TASK_ERROR:           usize = 2;
-pub const TASK_IO_ERROR:        usize = 3;
-pub const TASK_UNIMPLEMENTED:   usize = 4;
-pub const TASK_LABELS:      [&str; 5] = ["", "WARN", "ERROR", "IO_ERROR", "UNIMPLEMENTED"];
+pub const TASK_SUCCESS: usize = 0;
+pub const TASK_WARN: usize = 1;
+pub const TASK_ERROR: usize = 2;
+pub const TASK_IO_ERROR: usize = 3;
+pub const TASK_UNIMPLEMENTED: usize = 4;
+pub const TASK_LABELS: [&str; 5] = ["", "WARN", "ERROR", "IO_ERROR", "UNIMPLEMENTED"];
 
 pub trait GenExecutable<T, U, V>: Fn(T, &mut U, f64) -> (usize, V) {}
 impl<F, T, U, V> GenExecutable<T, U, V> for F where F: Fn(T, &mut U, f64) -> (usize, V) {}
@@ -35,10 +28,9 @@ pub trait TaskExecutable: GenExecutable<Vec<UdpPayload>, UdpPayload, UdpPayload>
 impl<F> TaskExecutable for F where F: GenExecutable<Vec<UdpPayload>, UdpPayload, UdpPayload> {}
 // Default types and implementations
 pub type TaskFn = fn(Vec<UdpPayload>, &mut UdpPayload, f64) -> (usize, UdpPayload);
-pub fn empty_exe(_:Vec<UdpPayload>, _:&mut UdpPayload, _:f64) -> (usize, UdpPayload) {
+pub fn empty_exe(_: Vec<UdpPayload>, _: &mut UdpPayload, _: f64) -> (usize, UdpPayload) {
     (0, vec![])
 }
-
 
 #[macro_export]
 macro_rules! build_fn {
@@ -110,7 +102,6 @@ pub struct Task {
 
 impl Task {
     pub fn new(name: &str, targets: Vec<usize>, context: UdpPayload, task: TaskFn) -> Task {
-
         Task {
             timestamp: Instant::now(),
             lifetime: Instant::now(),
@@ -128,7 +119,6 @@ impl Task {
     }
 
     pub fn execute(&mut self, data: Vec<UdpPayload>) -> Result<UdpPayload, TaskError> {
-
         self.timestamp = Instant::now();
 
         let t = self.lifetime.elapsed().as_micros() as f64 * 1E-6;

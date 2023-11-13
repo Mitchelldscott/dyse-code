@@ -14,45 +14,30 @@
 extern crate hidapi;
 use hidapi::HidDevice;
 
-use crate::{
-    rid::{
-        layer::*,
-        data_structures::{
-            HidPacket,
-            HID_PACKET_SIZE,
-        },
-    },
+use crate::rid::{
+    data_structures::{HidPacket, HID_PACKET_SIZE},
+    layer::*,
 };
 
-use std::{
-    sync::mpsc::Sender, 
-    time::Instant
-};
+use chrono::{DateTime, Utc};
+use std::{sync::mpsc::Sender, time::Instant};
 
 /// Reads from an Hid Device and send the packets through a channel
 pub struct HidReader {
-    parser_tx: Sender<HidPacket>,
+    parser_tx: Sender<(HidPacket, DateTime<Utc>)>,
     teensy: HidDevice,
     layer: HidLayer,
     timestamp: Instant,
 }
 
 impl HidReader {
-    pub fn new(layer: HidLayer, parser_tx: Sender<HidPacket>) -> HidReader {
+    pub fn new(layer: HidLayer, parser_tx: Sender<(HidPacket, DateTime<Utc>)>) -> HidReader {
         HidReader {
             parser_tx: parser_tx,
             teensy: layer.wait_for_device(),
             layer: layer,
             timestamp: Instant::now(),
         }
-    }
-
-    pub fn print(&self) {
-        println!(
-            "Reader Dump\n\trust time: {}\n\tteensy time: {}",
-            self.layer.pc_stats.lifetime(),
-            self.layer.mcu_stats.lifetime(),
-        );
     }
 
     pub fn reconnect(&mut self) {
@@ -86,14 +71,13 @@ impl HidReader {
         match &self.teensy.read(&mut buffer) {
             Ok(value) => {
                 if *value == HID_PACKET_SIZE {
-
-                    match self.parser_tx.send(buffer) {
-                        Ok(_) => {},
+                    match self.parser_tx.send((buffer, Utc::now())) {
+                        Ok(_) => {}
                         _ => self.layer.control_flags.shutdown(),
                     };
 
+                    self.layer.pc_stats.update_rx(1.0);
                     self.timestamp = Instant::now();
-                    self.layer.pc_stats.update_packets_read(1.0);
                 }
 
                 *value
@@ -113,16 +97,16 @@ impl HidReader {
     /// ```
     /// ```
     pub fn spin(&mut self) {
-
         while !self.layer.control_flags.is_shutdown() {
-            
-            let loopt = Instant::now();
+            let t = Instant::now();
 
             self.read();
 
-            self.layer.delay(loopt);
+            self.layer.delay(t);
+            // if self.layer.delay(t) > 1000.0 {
+            //     println!("[HID-Reader]: over cycled {:.6}s", 1E-6 * (t.elapsed().as_micros() as f64));
+            // }
         }
-
     }
 
     pub fn pipeline(&mut self) {

@@ -1,6 +1,6 @@
 lsm9ds1:
   driver: DS1
-  rate: 1000.0
+  rate: 100.0
 
 # complimentary_filter:
 #   driver: CMF
@@ -10,7 +10,7 @@ lsm9ds1:
 
 signal:
   driver: SIN
-  rate: 100.0
+  rate: 1000.0
   parameters: [10.0, 0.5, 0.5] # [frequency, amplitude, shift]
 
 # pwm1:

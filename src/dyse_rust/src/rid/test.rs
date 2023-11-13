@@ -18,10 +18,7 @@ extern crate hidapi;
 use hidapi::{HidApi, HidDevice};
 
 use crate::{
-    rid::{
-        data_structures::*, interface::*, layer::*, reader::*, writer::*,
-        robot_firmware::*,
-    },
+    rid::{data_structures::*, interface::*, layer::*, reader::*, robot_firmware::*, writer::*},
     socks::sockapi,
     utilities::{data_structures::*, loaders::*},
 };
@@ -42,7 +39,7 @@ use more_asserts::assert_le;
 
 #[allow(dead_code)]
 const VERBOSITY: usize = 1;
-pub static TEST_DURATION: u64 = 10;
+pub static TEST_DURATION: u64 = 30;
 
 #[cfg(test)]
 pub mod robot_fw {
@@ -54,7 +51,7 @@ pub mod robot_fw {
 
         rs.print();
 
-        rs.task_init_packets().iter().for_each(|packet| {
+        rs.all_init_packets().iter().for_each(|packet| {
             let mut total_items = 0;
             // packet.print();
             packet.iter().for_each(|b| {
@@ -147,7 +144,14 @@ pub mod dead_comms {
                 let mut buffer = [0; HID_PACKET_SIZE];
                 buffer[HID_MODE_INDEX] = 255;
                 buffer[HID_TOGL_INDEX] = 255;
-                interface.layer.pc_stats.packets_sent().to_le_bytes().iter().enumerate().for_each(|(i, &b)| buffer[HID_TASK_INDEX+i] = b);
+                interface
+                    .layer
+                    .pc_stats
+                    .n_tx()
+                    .to_le_bytes()
+                    .iter()
+                    .enumerate()
+                    .for_each(|(i, &b)| buffer[HID_TASK_INDEX + i] = b);
                 interface.writer_tx(buffer);
                 interface.check_feedback();
             }
@@ -163,22 +167,17 @@ pub mod dead_comms {
         interface.print();
 
         assert_le!(
-            (interface.layer.pc_stats.packets_sent() - interface.layer.mcu_stats.packets_sent())
-                .abs(),
+            (interface.layer.pc_stats.n_tx() - interface.layer.mcu_stats.n_tx()).abs(),
             (TEST_DURATION * 5) as f64,
             "PC and MCU sent different numbers of packets"
         );
         assert_le!(
-            ((TEST_DURATION as f64 / TEENSY_CYCLE_TIME_S)
-                - interface.layer.mcu_stats.packets_sent())
-            .abs(),
+            ((TEST_DURATION as f64 / TEENSY_CYCLE_TIME_S) - interface.layer.mcu_stats.n_tx()).abs(),
             (TEST_DURATION * 500) as f64,
             "Not enough packts sent by mcu"
         );
         assert_le!(
-            ((TEST_DURATION as f64 / TEENSY_CYCLE_TIME_S)
-                - interface.layer.pc_stats.packets_sent())
-            .abs(),
+            ((TEST_DURATION as f64 / TEENSY_CYCLE_TIME_S) - interface.layer.pc_stats.n_tx()).abs(),
             (TEST_DURATION * 500) as f64,
             "Not enough packts sent by pc"
         );
@@ -226,53 +225,69 @@ pub mod live_comms {
     use super::*;
 
     pub fn sim_interface(mut interface: HidInterface) {
-        interface.send_initializers();
-
         while !interface.layer.control_flags.is_connected() {}
-
-        println!("[HID-Control]: Live");
 
         let lifetime = Instant::now();
         let mut t = Instant::now();
+
+        println!("[HID-Control]: Live");
 
         while lifetime.elapsed().as_secs() < TEST_DURATION
             && !interface.layer.control_flags.is_shutdown()
         {
             let loopt = Instant::now();
-            // interface.try_config();
 
-            if interface.layer.control_flags.is_connected() {
+            if !interface.layer.control_flags.is_connected()
+                || !interface.layer.control_flags.is_initialized()
+            {
+                interface.robot_fw.configured = vec![false; interface.robot_fw.tasks.len()];
+                interface.layer.control_flags.initialize(true);
+                interface.send_initializers();
+            } else {
+                interface.try_config();
+
+                match interface.robot_fw.parse_sock() {
+                    Some(packet) => interface.writer_tx(packet),
+                    _ => {}
+                }
+
                 interface.check_feedback();
-                if t.elapsed().as_secs() >= 10 {
+
+                if t.elapsed().as_secs() >= 20 {
                     interface.print();
                     t = Instant::now();
                 }
             }
 
-            interface.layer.loop_delay(loopt);
-            // if t.elapsed().as_micros() as f64 > TEENSY_CYCLE_TIME_US {
-            //     println!("HID Control over cycled {} ms", (t.elapsed().as_micros() as f64) * 1E-3);
-            // }
+            interface.layer.delay(loopt);
         }
 
         interface.layer.control_flags.shutdown();
         println!("[HID-Control]: shutdown");
         interface.print();
 
-        let mut status = vec![false; interface.robot_fw.tasks.len()];
-        (0..interface.robot_fw.tasks.len()).for_each(|i| {
-            match interface.robot_fw.configured[i] && interface.robot_fw.tasks[i].pc_timestamp > (TEST_DURATION / 2) as f64 {
-                true => {}
-                false => {
-                    status[i] = true;
-                }
-            };
-        });
+        let status: Vec<String> = (0..interface.robot_fw.tasks.len())
+            .filter_map(|i| match interface.robot_fw.configured[i] {
+                true => None,
+                false => Some(interface.robot_fw.tasks[i].name.clone()),
+            })
+            .collect();
 
-        status
-            .iter()
-            .enumerate()
-            .for_each(|(i, status)| assert_eq!(*status, false, "Failed to configure task {}", i));
+        let timestamps: Vec<String> = (0..interface.robot_fw.tasks.len())
+            .filter_map(|i| match interface.robot_fw.tasks[i].pc_time != 0.0 {
+                true => None,
+                false => Some(interface.robot_fw.tasks[i].name.clone()),
+            })
+            .collect();
+
+        sockapi::shutdown();
+        assert_eq!(0, status.len(), "Failed to configure {:?}", status);
+        assert_eq!(
+            0,
+            timestamps.len(),
+            "Didn't receive output from {:?}",
+            timestamps
+        );
     }
 
     #[test]
@@ -309,11 +324,15 @@ pub mod live_comms {
         reader_handle.join().expect("[HID-Reader]: failed");
         interface_sim.join().expect("[HID-Control]: failed");
         writer_handle.join().expect("[HID-Writer]: failed");
-        sockapi::shutdown();
     }
 
-    #[test]
-    pub fn demo_echo() {
-        sockapi::sync_echo::<Vec<f64>>("echo", vec!["lsm9ds1"]);
-    }
+    // #[test]
+    // pub fn demo_echo() {
+    //     sockapi::sync_echo::<TaskCommunication>("echo", vec!["signal"]);
+    // }
+
+    // #[test]
+    // pub fn demo_hz() {
+    //     sockapi::hz::<TaskCommunication>("hz", vec!["lsm9ds1"]);
+    // }
 }

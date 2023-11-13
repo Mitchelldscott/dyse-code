@@ -12,16 +12,8 @@
  ********************************************************************************/
 // use std::thread::{Builder, JoinHandle};
 
-use crate::{
-    socks::{
-        socks::*,
-        message::UdpPayload,
-    },
-};
-use std::{
-    time::Instant,
-    fmt::Debug
-};
+use crate::socks::{message::UdpPayload, socks::*};
+use std::{fmt::Debug, time::Instant};
 
 #[macro_export]
 macro_rules! sync {
@@ -54,7 +46,6 @@ macro_rules! add_task {
     );
 }
 
-
 ///
 ///
 ///
@@ -64,7 +55,8 @@ macro_rules! add_task {
 ///
 ///
 
-pub fn shutdown() { // what the fuck is this?
+pub fn shutdown() {
+    // what the fuck is this?
     let mut sock = Sock::source("shutdown");
     sock.tx_payload(0);
     sock.tx_payload(0);
@@ -78,41 +70,98 @@ pub fn shutdown() { // what the fuck is this?
     sock.tx_payload(0);
 }
 
-pub fn sync_echo<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(name: &str, targets: Vec<&str>) {
-
-    let mut sock = Sock::synced("echo", targets, name, 0usize, |data: Vec<UdpPayload>, ctx: &mut UdpPayload, t: f64| {
-        let payloads: Vec<T> = data.iter().map(|task_in| bincode::deserialize::<T>(&task_in).expect("Failed to deserialize input (sync_echo)")).collect();
-        let mut context = bincode::deserialize::<usize>(ctx).expect("Failed to deserialize context (sync_echo)");
-        context += 1;
-        *ctx = bincode::serialize(&context).expect("Failed to serialize context (sync_echo)");
-        println!("[{t:.6}] {payloads:?}");
-        (0, vec![])
-    });
+pub fn sync_echo<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(
+    name: &str,
+    targets: Vec<&str>,
+) {
+    let mut sock = Sock::synced(
+        "echo",
+        targets,
+        name,
+        0usize,
+        |data: Vec<UdpPayload>, ctx: &mut UdpPayload, t: f64| {
+            let payloads: Vec<T> = data
+                .iter()
+                .map(|task_in| {
+                    bincode::deserialize::<T>(&task_in)
+                        .expect("Failed to deserialize input (sync_echo)")
+                })
+                .collect();
+            let mut context = bincode::deserialize::<usize>(ctx)
+                .expect("Failed to deserialize context (sync_echo)");
+            context += 1;
+            *ctx = bincode::serialize(&context).expect("Failed to serialize context (sync_echo)");
+            println!("[{t:.6}] {payloads:?}");
+            (0, vec![])
+        },
+    );
 
     sock.spin();
     sock.log_heavy(sock.tasks[0].get_context::<usize>());
 }
 
-pub fn echo<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(name: &str, targets: Vec<&str>) {
-
-    let mut sock = Sock::unsynced("echo", targets, name, 0, |data: Vec<UdpPayload>, _ctx: &mut UdpPayload, t: f64| {
-        let payloads: Vec<T> = data.iter().map(|task_in| bincode::deserialize::<T>(&task_in).expect("Failed to deserialize input (echo)")).collect();
-        println!("[{t:.6}] {payloads:?}");
-        (0, vec![])
-    });
+pub fn echo<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(
+    name: &str,
+    targets: Vec<&str>,
+) {
+    let mut sock = Sock::unsynced(
+        "echo",
+        targets,
+        name,
+        0,
+        |data: Vec<UdpPayload>, _ctx: &mut UdpPayload, t: f64| {
+            let payloads: Vec<T> = data
+                .iter()
+                .map(|task_in| {
+                    bincode::deserialize::<T>(&task_in).expect("Failed to deserialize input (echo)")
+                })
+                .collect();
+            println!("[{t:.6}] {payloads:?}");
+            (0, vec![])
+        },
+    );
 
     sock.spin();
     sock.log_heavy(sock.tasks[0].get_context::<usize>());
 }
 
-pub fn hz<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(name: &str, targets: Vec<&str>) {
-    
-    let mut sock = Sock::synced("hz", targets, name, 0.0f64, |_data: Vec<UdpPayload>, ctx: &mut UdpPayload, t: f64| {
-        let t1: f64 = bincode::deserialize(ctx).expect("Failed to deserialze context (hz)");
-        *ctx = bincode::serialize(&t).unwrap();
-        println!("[{t:.6}] {:.4}", 1.0 / (t - t1));
-        (0, vec![])
-    });
+pub fn hz<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(
+    name: &str,
+    targets: Vec<&str>,
+) {
+    let mut sock = Sock::synced(
+        "hz",
+        targets,
+        name,
+        0.0f64,
+        |_data: Vec<UdpPayload>, ctx: &mut UdpPayload, t: f64| {
+            let t1: f64 = bincode::deserialize(ctx).expect("Failed to deserialze context (hz)");
+            *ctx = bincode::serialize(&t).unwrap();
+            println!("[{t:.6}] {:.4}", 1.0 / (t - t1));
+            (0, vec![])
+        },
+    );
+
+    sock.spin();
+    sock.log_heavy(sock.tasks[0].get_context::<usize>());
+}
+
+pub fn plot<T: PartialEq + Debug + for<'a> serde::de::Deserialize<'a>>(
+    name: &str,
+    targets: Vec<&str>,
+) {
+    let mut sock = Sock::synced(
+        "csv",
+        targets,
+        name,
+        0.0f64,
+        |_data: Vec<UdpPayload>, ctx: &mut UdpPayload, t: f64| {
+            let t1: f64 = bincode::deserialize(ctx).expect("Failed to deserialze context (hz)");
+            *ctx = bincode::serialize(&t).unwrap();
+            println!("[{t:.6}] {:.4}", 1.0 / (t - t1));
+            (0, vec![])
+        },
+    );
 
     sock.spin();
     sock.log_heavy(sock.tasks[0].get_context::<usize>());
