@@ -49,7 +49,7 @@ def main():
 	parser.add_argument('-g', '--graph',
 		nargs='+',
 		metavar=['Profile', 'subdir'],
-		help='Generate a UML diagram of the source code')
+		help='Generate a drawio diagram of source code or fw tasks')
 
 	ap = parser.parse_args(sys.argv[1:])
 
@@ -71,14 +71,18 @@ def main():
 
 	if ap.graph:
 		bp = Build_Profile();
-		bp.load_profile(ap.graph[0])
+		if bp.is_profile(ap.graph[0]):
+			if bp.load_profile(ap.graph[0]):
 
-		if len(ap.graph) > 1:
-			uml_gen = UML_Generator(bp.project_path(), DysePy_LOC_LUT['docs'], ap.graph[1])
+				if len(ap.graph) > 1:
+					graph_gen = UML_Generator(bp.project_path(), DysePy_LOC_LUT['docs'], ap.graph[1])
+				else:
+					graph_gen = UML_Generator(bp.project_path(), DysePy_LOC_LUT['docs'])
+
 		else:
-			uml_gen = UML_Generator(bp.project_path(), DysePy_LOC_LUT['docs'])
+			graph_gen = UML_Generator(ap.graph[0], DysePy_LOC_LUT['docs'])
 	
-		uml_gen.generate()
+		graph_gen.generate()
 
 
 if __name__ == '__main__':

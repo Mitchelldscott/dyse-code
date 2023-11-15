@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import yaml
 from N2G import drawio_diagram
 
 
@@ -13,7 +14,7 @@ class UML_Generator:
 
 		self.prj_dir = srcdir
 		self.out_dir = outdir
-		self.prj_name = srcdir.split('/')[-1]
+		self.prj_name = srcdir.split('/')[-1].split('.')[0]
 
 		self.nodes = []
 		self.edges = []
@@ -43,7 +44,7 @@ class UML_Generator:
 		for edge in self.edges:
 			print(f"\t{edge['source']} --{edge['label']}--> {edge['target']}")
 
-	def get_nodes(self):
+	def get_cpp_nodes(self):
 		for root, subdirs, files in os.walk(self.src_dir):
 			for file in files:
 				node = file.split('.')[0]
@@ -51,7 +52,7 @@ class UML_Generator:
 					self.nodes.append({'id': node, 'label': node, 'width': 85, 'height': 50})
 		self.dump_nodes()
 
-	def get_edges(self):
+	def get_cpp_edges(self):
 		for root, subdirs, files in os.walk(self.src_dir):
 			for file in files:
 				node = file.split('.')[0]
@@ -73,15 +74,50 @@ class UML_Generator:
 
 		self.dump_edges()
 
+	def get_fw_task_nodes(self):
+		with open(self.src_dir, 'r') as f:
+			data = yaml.safe_load(f)
+			for node in data:
+				self.nodes.append({'id': node, 'label': node, 'width': 85, 'height': 50})
+		self.dump_nodes()
+
+	def get_fw_task_edges(self):
+		with open(self.src_dir, 'r') as f:
+			data = yaml.safe_load(f)
+			for node in data:
+				if 'inputs' in data[node]:
+					for source in data[node]['inputs']:
+						self.edges.append({'source' : source, 
+											'label' : '', 
+											'target' : node, 
+											'style' : 'Line End=1'})
+		self.dump_edges()
+
 	def make_graph(self):
 		self.graph['nodes'] = self.nodes
 		self.graph['edges'] = self.edges
 		diagram = drawio_diagram()
 		diagram.from_dict(self.graph, width=600, height=400)
 		diagram.layout(algo="grid")
-		diagram.dump_file(filename=f"{self.prj_name}_uml.drawio", folder=self.out_dir)
+		diagram.dump_file(filename=f"{self.prj_name}.drawio", folder=self.out_dir)
+		
 		
 	def generate(self):
-		self.get_nodes()
-		self.get_edges()
-		self.make_graph()					
+		if self.src_dir[-5:] == '.yaml':
+			self.get_fw_task_nodes()
+			self.get_fw_task_edges()
+
+		else:
+			self.get_cpp_nodes()
+			self.get_cpp_edges()
+
+		self.make_graph()	
+
+
+
+
+
+
+
+
+

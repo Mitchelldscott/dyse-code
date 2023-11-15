@@ -48,6 +48,13 @@ class Build_Profile:
 
 		return os.path.join(DysePy_LOC_LUT['src'], self.name)
 
+	def is_profile(self, profile_path):
+		if os.path.exists(profile_path) and profile_path.split('/')[-2] == 'build':
+			return True
+
+		return False
+
+
 	def load_profile(self, profile):
 		"""
 			Parse a yaml file into a build profile requires a valid yaml file and project
@@ -59,9 +66,9 @@ class Build_Profile:
 		# Get full path
 		profile_path = os.path.join(DysePy_LOC_LUT['profiles'], f'{profile}.yaml')
 
-		if not os.path.exists(profile_path):
+		if not self.is_profile(profile_path):
 			dyse_log(f"Profile {profile_path} does not exist", 2)
-			return
+			return False
 
 		with open(profile_path, 'r') as profile:
 			contents = yaml.safe_load(profile)
@@ -92,6 +99,8 @@ class Build_Profile:
 			for profile in contents['include']:
 				self.includes.append(Build_Profile())
 				self.includes[-1].load_profile(profile)
+
+		return True
 
 	def assert_setup(self):
 		"""
