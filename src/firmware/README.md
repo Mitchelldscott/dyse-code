@@ -7,7 +7,9 @@
 ## Firmware status guide (terminology)
 
 Onboard-LED blinking = HID connected
+
 Red-LED blinking = configuration issue
+
 Green-LED on = tasks are running
 
 | Status       | Teensy Powered | Teensy configured | Motors Powered | HID Connected |
